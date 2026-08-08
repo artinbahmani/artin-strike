@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>fps-strike</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- In-game HUD -->
+  <div id="hud">
+    <div id="topbar">
+      <canvas id="minimap" width="150" height="150"></canvas>
+      <div id="top-center">
+        <div id="score-line">
+          <span id="score-ct" class="ct">0</span>
+          <span id="timer">1:40</span>
+          <span id="score-t" class="t">0</span>
+        </div>
+        <div id="round-label">ROUND 1</div>
+      </div>
+      <div id="killfeed"></div>
+    </div>
+
+    <div id="crosshair">
+      <span class="ch top"></span><span class="ch bottom"></span>
+      <span class="ch left"></span><span class="ch right"></span>
+      <span class="ch dot"></span>
+    </div>
+    <div id="hitmarker">
+      <span></span><span></span><span></span><span></span>
+    </div>
+
+    <div id="banner"><div id="banner-title"></div><div id="banner-sub"></div></div>
+
+    <div id="bottombar">
+      <div id="vitals">
+        <div class="vital"><span class="vlabel">HP</span>
+          <div class="bar"><div id="health-fill" class="bar-fill"></div></div>
+          <span id="health-num">100</span></div>
+        <div class="vital"><span class="vlabel">AR</span>
+          <div class="bar"><div id="armor-fill" class="bar-fill armor"></div></div>
+          <span id="armor-num">0</span></div>
+      </div>
+      <div id="hint"></div>
+      <div id="gun">
+        <div id="money">$800</div>
+        <div id="weapon-name">P250</div>
+        <div id="ammo"><span id="ammo-mag">13</span><span class="ammo-sep">/</span><span id="ammo-res">52</span></div>
+      </div>
+    </div>
+
+    <div id="defuse-wrap">
+      <div id="defuse-label">DEFUSING</div>
+      <div class="bar big"><div id="defuse-fill"></div></div>
+    </div>
+    <div id="spectate-label"></div>
+  </div>
+
+  <div id="dmg-overlay"></div>
+
+  <!-- Buy menu -->
+  <div id="buy-menu" class="panel hidden">
+    <h2>BUY <span id="buy-money">$800</span></h2>
+    <div id="buy-items"></div>
+    <p class="panel-note">Keys 1&ndash;5 or click &middot; B to close &middot; buy phase only</p>
+  </div>
+
+  <!-- Scoreboard -->
+  <div id="scoreboard" class="panel hidden">
+    <h2>SCOREBOARD</h2>
+    <table>
+      <thead><tr><th>Player</th><th>Team</th><th>K</th><th>D</th><th>$</th></tr></thead>
+      <tbody id="sb-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Overlays -->
+  <div id="start-overlay" class="overlay">
+    <h1>FPS<span>//</span>STRIKE</h1>
+    <p class="tagline">Tactical bomb-defusal FPS in the browser &middot; raycast engine &middot; zero dependencies</p>
+    <div class="controls-grid">
+      <span><b>WASD</b> move</span><span><b>Mouse</b> aim</span><span><b>LMB</b> fire</span>
+      <span><b>R</b> reload</span><span><b>1/2/3</b> weapons</span><span><b>B</b> buy menu</span>
+      <span><b>E</b> defuse (hold)</span><span><b>Tab</b> scoreboard</span><span><b>Shift</b> walk</span>
+    </div>
+    <label class="sens-row">Mouse sensitivity
+      <input id="sens" type="range" min="0.4" max="2.5" step="0.1" value="1">
+    </label>
+    <button id="btn-start">CLICK TO PLAY</button>
+    <p class="mode-note">You are a Counter-Terrorist. Stop the bomb. First to 6 rounds.</p>
+    <p id="stats-line"></p>
+  </div>
+
+  <div id="pause-overlay" class="overlay hidden">
+    <h1>PAUSED</h1>
+    <button id="btn-resume">CLICK TO RESUME</button>
+  </div>
+
+  <div id="match-overlay" class="overlay hidden">
+    <h1 id="match-result">VICTORY</h1>
+    <p id="match-score"></p>
+    <button id="btn-restart">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script src="audio.js"></script>
+<script src="ai.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
