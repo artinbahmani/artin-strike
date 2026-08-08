@@ -696,8 +696,17 @@
     refreshBuyMenu();
   }
 
-  function openBuy() { buyOpen = true; refreshBuyMenu(); el.buyMenu.classList.remove('hidden'); }
-  function closeBuy() { buyOpen = false; el.buyMenu.classList.add('hidden'); }
+  // While the pointer is locked, the browser retargets every mouse event to the
+  // canvas, so buy rows can never be clicked. Free the cursor while the menu is
+  // open and re-lock when it closes.
+  function openBuy() {
+    buyOpen = true; refreshBuyMenu(); el.buyMenu.classList.remove('hidden');
+    document.exitPointerLock && document.exitPointerLock();
+  }
+  function closeBuy() {
+    buyOpen = false; el.buyMenu.classList.add('hidden');
+    if (running && !paused) lockPointer();
+  }
   function toggleBuy() { if (phase === 'buy') { buyOpen ? closeBuy() : openBuy(); } }
 
   /* ================================================================== *
@@ -767,6 +776,12 @@
 
   canvas.addEventListener('mousedown', function (e) {
     if (e.button !== 0) return;
+    // Re-acquire pointer lock lost outside the pause flow (e.g. after the buy
+    // phase auto-locked failed, or Esc while dead). This click only aims.
+    if (running && !paused && !buyOpen && document.pointerLockElement !== canvas) {
+      lockPointer();
+      return;
+    }
     mouseDown = true;
     if (running && !paused) playerFire();
   });
@@ -780,13 +795,22 @@
 
   document.addEventListener('pointerlockchange', function () {
     var locked = document.pointerLockElement === canvas;
-    if (!locked && running && player.alive && (phase === 'live' || phase === 'buy') && phase !== 'matchEnd') {
+    // Losing the lock means the user pressed Esc — pause, unless the lock was
+    // released deliberately (buy menu open, match over) or the game is already
+    // paused. Dead players spectate and don't need a pause screen.
+    if (!locked && running && !paused && !buyOpen && player.alive && (phase === 'live' || phase === 'buy')) {
       paused = true;
       el.pause.classList.remove('hidden');
     }
   });
 
-  function lockPointer() { canvas.requestPointerLock && canvas.requestPointerLock(); }
+  function lockPointer() {
+    if (!canvas.requestPointerLock || document.pointerLockElement === canvas) return;
+    var p = canvas.requestPointerLock();
+    // Rejects during the Esc cooldown or without a user gesture; the next
+    // canvas click retries, so this is safe to ignore.
+    if (p && p.catch) p.catch(function () { });
+  }
 
   $('btn-start').addEventListener('click', function () {
     SoundFX.unlock();
