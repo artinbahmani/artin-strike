@@ -1,6 +1,7 @@
 /* fps-strike — game.js
  * Game glue: map, player, bots, weapons, economy, rounds, bomb logic, HUD.
- * engine.js (Engine), audio.js (SoundFX) and ai.js (AI) must load first.
+ * engine.js (Engine), audio.js (SoundFX), ai.js (AI), viewmodel.js
+ * (Viewmodel) and radar.js (Radar) must load first.
  */
 (function () {
   'use strict';
@@ -109,7 +110,7 @@
     current: 'pistol',
     money: START_MONEY, kills: 0, deaths: 0, kit: false,
     bloom: 0, kick: 0, fireT: 0, reloading: 0, switching: 0,
-    speed: 0
+    speed: 0, muzzle: 0
   };
 
   var bots = [];
@@ -134,7 +135,7 @@
    * DOM
    * ================================================================== */
   function $(id) { return document.getElementById(id); }
-  var canvas = $('game'), minimap = $('minimap');
+  var canvas = $('game'), radarCv = $('radar');
   var ray = new Engine.Raycaster(canvas);
   var el = {
     timer: $('timer'), scoreCt: $('score-ct'), scoreT: $('score-t'), roundLabel: $('round-label'),
@@ -964,66 +965,47 @@
     drawMinimapNow(cam);
   }
 
-  // First-person weapon: simple procedural gun/knife at bottom of screen.
+  // First-person weapon: procedural gun/knife lower-right with walk bob,
+  // recoil kick and reload animation (see viewmodel.js).
   function drawViewmodel(cam) {
-    var ctx = ray.ctx, W = canvas.width, H = canvas.height;
     var kind = cam.isPlayer ? player.current : (cam.weapon ? cam.weapon.kind : 'rifle');
-    var cx = W / 2, base = H;
-    var bob = cam.isPlayer ? Math.sin(time * 9) * Math.min(1, player.speed / 3) * 4 : 0;
-    var dip = 0;
-    if (cam.isPlayer) {
-      if (player.reloading > 0) dip = 26 * Math.sin(Math.PI * (1 - player.reloading / currentWeapon().reload));
-      if (player.switching > 0) dip = 30 * (player.switching / 0.4);
-    }
-    ctx.save();
-    ctx.translate(cx, base + dip + bob + (shake > 0 ? rand(-2, 2) * shake : 0));
-
-    if (kind === 'knife') {
-      ctx.fillStyle = '#2a2d33';
-      ctx.fillRect(58, -46, 12, 34); // handle
-      ctx.fillStyle = '#c7ccd4';
-      ctx.beginPath();
-      ctx.moveTo(58, -46); ctx.lineTo(64, -110); ctx.lineTo(70, -46);
-      ctx.closePath(); ctx.fill();
-    } else {
-      var rifle = kind === 'rifle';
-      ctx.fillStyle = '#1b1d21';
-      ctx.fillRect(rifle ? 34 : 44, rifle ? -58 : -50, rifle ? 66 : 34, rifle ? 26 : 20); // body
-      ctx.fillStyle = '#26292e';
-      ctx.fillRect(rifle ? 92 : 66, rifle ? -52 : -46, rifle ? 46 : 20, rifle ? 10 : 8);   // barrel
-      ctx.fillStyle = '#101215';
-      ctx.fillRect(rifle ? 46 : 50, rifle ? -32 : -30, 14, 22);                             // grip
-      if (rifle) { ctx.fillStyle = '#6b4f2e'; ctx.fillRect(40, -44, 20, 8); }               // wood furniture
-      if (cam.isPlayer && player.muzzle > 0) {
-        var fx = rifle ? 138 : 86, fy = rifle ? -47 : -42;
-        var g = ctx.createRadialGradient(fx, fy, 0, fx, fy, 26);
-        g.addColorStop(0, 'rgba(255,235,150,0.95)');
-        g.addColorStop(1, 'rgba(255,140,40,0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(fx - 26, fy - 26, 52, 52);
-      }
-    }
-    ctx.restore();
+    var wdef = cam.isPlayer ? currentWeapon() : null;
+    Viewmodel.draw(ray.ctx, canvas.width, canvas.height, {
+      kind: kind,
+      bobPhase: time * 9,
+      moveAmt: cam.isPlayer ? Math.min(1, player.speed / 3) : 0,
+      swayX: 0, swayY: shake > 0 ? rand(-2, 2) * shake : 0,
+      kick: cam.isPlayer ? Math.min(1, Math.abs(player.kick) * 50 + (player.muzzle > 0 ? 0.5 : 0)) : 0,
+      muzzle: cam.isPlayer ? player.muzzle : 0,
+      reloadFrac: cam.isPlayer && player.reloading > 0 && wdef.reload
+        ? 1 - player.reloading / wdef.reload : -1,
+      switchFrac: cam.isPlayer ? Math.max(0, player.switching / 0.4) : 0,
+      throwFrac: -1,
+      t: time
+    });
   }
 
   function drawMinimapNow(cam) {
     var dots = [];
     bots.forEach(function (b) {
       if (!b.alive) return;
-      if (b.team === 'CT' && b !== cam) dots.push({ x: b.x - 0.5, y: b.y - 0.5, color: '#5aa2ff', r: 3 });
+      if (b.team === 'CT' && b !== cam) dots.push({ x: b.x, y: b.y, color: '#5aa2ff' });
     });
     blips.forEach(function (b) {
-      if (b.team === 'T') dots.push({ x: b.x - 0.5, y: b.y - 0.5, color: '#ff5347', r: 3 });
+      if (b.team === 'T') dots.push({ x: b.x, y: b.y, color: '#ff5347' });
     });
+    var bombPos = null;
     if (bomb.planted || bomb.dropped) {
-      var bx = bomb.planted ? bomb.x : bomb.dropped.x;
-      var by = bomb.planted ? bomb.y : bomb.dropped.y;
-      dots.push({ x: bx - 0.5, y: by - 0.5, color: '#f0a500', r: 4 });
+      bombPos = {
+        x: bomb.planted ? bomb.x : bomb.dropped.x,
+        y: bomb.planted ? bomb.y : bomb.dropped.y,
+        blink: bomb.planted && ((time * 2) | 0) % 2 === 0
+      };
     }
-    Engine.drawMinimap(minimap, world, {
-      sites: sites,
+    Radar.draw(radarCv, {
+      player: { x: cam.x, y: cam.y, dir: cam.dir },
       dots: dots,
-      player: { x: cam.x, y: cam.y, dir: cam.dir }
+      bomb: bombPos
     });
   }
 
@@ -1110,6 +1092,7 @@
   function boot() {
     ray.resize();
     window.addEventListener('resize', ray.resize.bind(ray));
+    Radar.setMap(world, sites);
     buildBuyMenu();
     spawnBots();
     requestAnimationFrame(loop);

@@ -2,6 +2,11 @@
  * Bot intelligence: BFS grid pathfinding plus a small state machine per bot
  * (objective -> hunt -> engage -> plant/defuse). Exposed as the global `AI`.
  * Bots act through the game facade `G` so all combat rules stay in game.js.
+ *
+ * Realism layer: 150-400ms reaction delay on first sight, aim error that
+ * shrinks while tracking, hearing (gunshots and loud footsteps), flashbang
+ * blindness (bots spray at their last memory), a bias for holding near wall
+ * corners while engaging, and occasional flash/HE usage at range.
  */
 (function () {
   'use strict';
@@ -51,7 +56,6 @@
       c = prev[c];
     }
     path.reverse();
-    // Light smoothing: drop waypoints we can see past (line-of-sight on grid).
     // Greedy string-pulling: from each anchor, skip to the furthest
     // waypoint with clear line-of-sight. Falls back to the raw path.
     var out = [];
@@ -87,8 +91,9 @@
 
   /* ------------------------------------------------------------------ *
    * Bot brain — called once per frame per alive bot.
-   * G provides: world, player, bots, bomb, sites, phase, noise,
-   *             los(), tryMove(), botShoot(), onPlant(), onDefuse()
+   * G provides: world, sites, bomb, phase, time, noise,
+   *             los(), tryMove(), foesOf(), botShoot(), botThrowNade(),
+   *             onPlant(), onDefuse(), onPickupBomb(), closestAliveT()
    * ------------------------------------------------------------------ */
 
   function angleTo(ax, ay, bx, by) { return Math.atan2(by - ay, bx - ax); }
@@ -119,7 +124,7 @@
     if (dist < 0.25) { bot.pathI++; return bot.pathI >= bot.path.length; }
     var step = Math.min(speed * dt, dist);
     G.tryMove(bot, (dx / dist) * step, (dy / dist) * step, 0.28);
-    bot.moving = true;
+    bot.moving = speed > 2; // loud footsteps only at full speed
     // Stuck detection: snagged on a corner — skip ahead and force a repath.
     bot.stuckT = bot.stuckT || 0;
     if (bot.lastX !== undefined &&
@@ -139,6 +144,7 @@
 
   // Pick the closest visible living enemy. FOV ~ 120 degrees.
   function acquireTarget(bot, G) {
+    if (bot.flashed > 0) return null; // flash-blind
     var best = null, bestD = 20;
     var foes = G.foesOf(bot.team);
     for (var i = 0; i < foes.length; i++) {
@@ -149,16 +155,46 @@
       if (d > 18 || d >= bestD) continue;
       var ang = angleTo(bot.x, bot.y, f.x, f.y);
       if (Math.abs(angleDiff(ang, bot.dir)) > 1.05 && d > 2.5) continue; // outside FOV unless point-blank
-      if (!G.los(bot.x, bot.y, f.x, f.y)) continue;
+      if (!G.los(bot.x, bot.y, f.x, f.y)) continue; // walls AND smoke
       best = f; bestD = d;
     }
     return best;
+  }
+
+  /* Cover bias: pick the strafe side that has a wall within ~1.2 tiles, so
+   * the bot settles next to a corner instead of standing in the open. */
+  function pickCoverSide(bot, G, aimAng) {
+    for (var s = 0; s < 2; s++) {
+      var sign = s === 0 ? 1 : -1;
+      var a = aimAng + Math.PI / 2 * sign;
+      var px = bot.x + Math.cos(a) * 1.2, py = bot.y + Math.sin(a) * 1.2;
+      if (G.world.solid(px, py)) return sign;
+    }
+    return Math.random() < 0.5 ? -1 : 1;
+  }
+
+  // Blind-fire at the last known enemy position while flashed.
+  function flashedBehaviour(bot, G, dt) {
+    bot.flashed -= dt;
+    if (bot.lastSeen && G.time - bot.lastSeen.t < 3) {
+      var aimAng = angleTo(bot.x, bot.y, bot.lastSeen.x, bot.lastSeen.y);
+      bot.dir += angleDiff(aimAng, bot.dir) * Math.min(1, dt * 3);
+      bot.fireT -= dt;
+      if (bot.fireT <= 0 && Math.abs(angleDiff(bot.dir, aimAng)) < 0.4) {
+        G.botShoot(bot, bot.lastSeen, 0.22); // spraying blind
+        bot.fireT = 0.25 + Math.random() * 0.3;
+      }
+    } else {
+      bot.dir += Math.sin(G.time * 5 + bot.id) * 0.06; // disoriented
+    }
   }
 
   AI.think = function (bot, G, dt) {
     if (!bot.alive || G.phase === 'buy' || G.phase === 'roundEnd' || G.phase === 'matchEnd') return;
     bot.moving = false;
     if (bot.flash > 0) bot.flash -= dt;
+    if (bot.flashed > 0) { flashedBehaviour(bot, G, dt); return; }
+    if (bot.nadeCd > 0) bot.nadeCd -= dt;
 
     var target = acquireTarget(bot, G);
     var now = G.time;
@@ -187,19 +223,20 @@
     /* --- Combat --- */
     if (target) {
       var aimAng = angleTo(bot.x, bot.y, target.x, target.y);
+      var dist = Math.hypot(target.x - bot.x, target.y - bot.y);
       // Turn toward target; aim error shrinks the longer the bot tracks it.
-      if (bot.trackRef !== target) { bot.trackRef = target; bot.trackT = 0; bot.reacted = false; }
+      if (bot.trackRef !== target) { bot.trackRef = target; bot.trackT = 0; bot.reacted = false; bot.coverSide = 0; }
       bot.trackT += dt;
       if (!bot.reacted && bot.trackT > bot.reaction) bot.reacted = true;
       bot.dir += angleDiff(aimAng, bot.dir) * Math.min(1, dt * 8);
       var err = Math.max(0.015, 0.09 - bot.trackT * 0.05);
 
-      // Strafe while shooting to be a harder target.
-      bot.strafeT -= dt;
-      if (bot.strafeT <= 0) { bot.strafeDir = Math.random() < 0.5 ? -1 : 1; bot.strafeT = 0.4 + Math.random() * 0.6; }
-      var sa = aimAng + Math.PI / 2 * bot.strafeDir;
-      G.tryMove(bot, Math.cos(sa) * 1.1 * dt, Math.sin(sa) * 1.1 * dt, 0.28);
-      bot.moving = true;
+      // Occasionally lob a grenade at a target held at range.
+      if (bot.reacted && bot.nadeCd <= 0 && bot.nades && dist > 3.5 && dist < 12) {
+        bot.nadeCd = 9 + Math.random() * 6;
+        if (bot.nades.flash > 0 && Math.random() < 0.5) { bot.nades.flash--; G.botThrowNade(bot, 'flash', target); }
+        else if (bot.nades.he > 0) { bot.nades.he--; G.botThrowNade(bot, 'he', target); }
+      }
 
       if (bot.reacted) {
         bot.burstLeft = bot.burstLeft || 0;
@@ -218,6 +255,17 @@
             bot.fireT = 0.05;
           }
         }
+      }
+
+      // Movement: hold still while firing (CS discipline), strafe between
+      // bursts toward the nearest wall corner for cover.
+      if (bot.burstLeft <= 0 || !bot.reacted) {
+        if (!bot.coverSide) bot.coverSide = pickCoverSide(bot, G, aimAng);
+        bot.strafeT -= dt;
+        if (bot.strafeT <= 0) { bot.coverSide = pickCoverSide(bot, G, aimAng); bot.strafeT = 0.4 + Math.random() * 0.6; }
+        var sa = aimAng + Math.PI / 2 * bot.coverSide;
+        G.tryMove(bot, Math.cos(sa) * 1.4 * dt, Math.sin(sa) * 1.4 * dt, 0.28);
+        bot.moving = true;
       }
       return;
     }
@@ -245,7 +293,7 @@
         return;
       }
       if (bomb.dropped) {
-        // Closest T retrieves the bomb.
+        // Closest T bot retrieves the bomb.
         var carrier = G.closestAliveT(bomb.x, bomb.y);
         if (carrier === bot) {
           if (Math.hypot(bot.x - bomb.x, bot.y - bomb.y) < 0.7) { G.onPickupBomb(bot); return; }
@@ -265,7 +313,7 @@
     if (bomb.planted) {
       var bd = Math.hypot(bot.x - bomb.x, bot.y - bomb.y);
       if (bd < 1.1) {
-        bot.channel = { kind: 'defuse', t: 0, need: 5, x: bomb.x, y: bomb.y, breakOnThreat: true };
+        bot.channel = { kind: 'defuse', t: 0, need: bot.kit ? 2.5 : 5, x: bomb.x, y: bomb.y, breakOnThreat: true };
       } else {
         setDestination(bot, G, bomb.x, bomb.y);
         followPath(bot, G, dt, bot.speed);
@@ -275,7 +323,7 @@
     hunt(bot, G, dt);
   };
 
-  // Investigate last-seen position or recent gunfire, else hold assigned site.
+  // Investigate last-seen position or recent noise, else hold assigned site.
   function hunt(bot, G, dt) {
     var now = G.time;
     if (bot.lastSeen && now - bot.lastSeen.t < 4) {
@@ -285,9 +333,9 @@
     }
     if (G.noise && now - G.noise.t < 5) {
       var nd = Math.hypot(bot.x - G.noise.x, bot.y - G.noise.y);
-      if (nd < 12) {
+      if (nd < (G.noise.r || 12)) { // gunshots carry far, footsteps don't
         setDestination(bot, G, G.noise.x, G.noise.y);
-        followPath(bot, G, dt, bot.speed);
+        followPath(bot, G, dt, bot.speed * 0.75); // walk in quiet
         return;
       }
     }

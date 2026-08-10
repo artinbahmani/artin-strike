@@ -4,7 +4,9 @@ Tactical CS-style bomb-defusal FPS vs AI bots: raycast engine, economy, buy menu
 
 ## Features
 
-- Wolfenstein-style raycasting engine on canvas: DDA wall casting, procedurally generated textures (brick / concrete / crate), distance fog, per-column z-buffered billboard sprites
+- Wolfenstein-style raycasting engine on canvas: DDA wall casting with half-resolution textured floor/ceiling casting and distance shading, procedurally generated textures (brick / concrete / crate), distance fog, per-column z-buffered billboard sprites
+- First-person weapon viewmodel: procedural per-weapon gun rendered lower-right with walk bob, recoil kick, reload and weapon-switch animations, muzzle flash
+- CS-style radar (top-left): player-centered circular radar with teammates, spotted enemies and the bomb blip
 - Bomb defusal mode, 4v4: Terrorist bots pick site A or B, escort the carrier, plant the bomb, and guard it; Counter-Terrorist bots split defense, rotate on plant, and defuse. You play CT — hold **E** to defuse
 - Buy menu with CS-style economy: $800 start, $300 per kill, $3250 win / $1900 loss, buy phase each round. AK-47, P250, kevlar armor (absorbs 40%), defuse kit (halves defuse time), ammo refills
 - Three weapons: rifle (full-auto), pistol (semi), knife — with recoil kick, spread bloom that grows under sustained fire and movement, reloads, range damage falloff

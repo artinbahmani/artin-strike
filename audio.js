@@ -2,6 +2,7 @@
  * All sound effects synthesized with the Web Audio API. No audio files.
  * Exposed as the global `SoundFX`. The context is created lazily on the
  * first user gesture (pointer-lock click) to satisfy autoplay policies.
+ * World sounds (bot gunfire, footsteps) take a distance for attenuation.
  */
 (function () {
   'use strict';
@@ -25,6 +26,12 @@
     }
     if (ctx.state === 'suspended') ctx.resume();
     return true;
+  }
+
+  // Distance attenuation: volume and high-frequency content both fall off.
+  function atten(dist) {
+    if (!dist) return 1;
+    return Math.max(0.02, 1 / (1 + dist * 0.28));
   }
 
   // Filtered noise burst: the body of every gunshot/explosion.
@@ -53,20 +60,27 @@
     o.start(); o.stop(ctx.currentTime + dur);
   }
 
-  var lastStep = 0;
+  var lastStep = 0, lastWorldStep = 0;
+
+  // Per-weapon gunshot signatures.
+  var SHOTS = {
+    rifle:  function (v, f) { noise(0.16, 900 * f + 300, 0.9 * v); tone(160, 0.12, 0.5 * v, 'sawtooth', 60); },   // AK-47
+    m4:     function (v, f) { noise(0.14, 1300 * f + 300, 0.8 * v); tone(220, 0.10, 0.4 * v, 'sawtooth', 80); },  // M4A4
+    awp:    function (v, f) { noise(0.45, 700 * f + 200, 1.1 * v); tone(110, 0.35, 0.7 * v, 'sawtooth', 40); },   // AWP crack
+    deagle: function (v, f) { noise(0.2, 1100 * f + 200, 0.95 * v); tone(180, 0.14, 0.5 * v, 'square', 70); },    // Desert Eagle
+    pistol: function (v, f) { noise(0.11, 1600 * f + 400, 0.7 * v); tone(320, 0.07, 0.35 * v, 'square', 120); }   // P250
+  };
 
   window.SoundFX = {
     unlock: ensure,
 
-    shot: function (kind) {
+    // kind: rifle/m4/awp/deagle/pistol · dist: tiles from the listener
+    shot: function (kind, dist) {
       if (!ensure()) return;
-      if (kind === 'rifle') {
-        noise(0.16, 900, 0.9);
-        tone(160, 0.12, 0.5, 'sawtooth', 60);
-      } else { // pistol
-        noise(0.11, 1600, 0.7);
-        tone(320, 0.07, 0.35, 'square', 120);
-      }
+      var fn = SHOTS[kind] || SHOTS.pistol;
+      var v = atten(dist);
+      if (v <= 0.03) return;
+      fn(v, Math.max(0.3, 1 - (dist || 0) * 0.04));
     },
     dryFire: function () { if (ensure()) tone(1200, 0.04, 0.15, 'square'); },
     reload: function () {
@@ -74,25 +88,58 @@
       tone(500, 0.05, 0.2, 'square');
       setTimeout(function () { if (ctx) tone(340, 0.06, 0.25, 'square'); }, 220);
     },
+    bolt: function () { // AWP rechamber: clack-clack
+      if (!ensure()) return;
+      noise(0.05, 2400, 0.3, 'bandpass');
+      setTimeout(function () { if (ctx) noise(0.06, 1800, 0.35, 'bandpass'); }, 180);
+    },
     knife: function () { if (ensure()) noise(0.14, 3200, 0.35, 'bandpass'); },
     hit: function () { if (ensure()) tone(1400, 0.05, 0.3, 'sine', 900); },
+    headshot: function () { if (ensure()) { tone(2200, 0.06, 0.35, 'triangle', 1400); noise(0.08, 3800, 0.25, 'bandpass'); } },
     hurt: function () { if (ensure()) { tone(220, 0.15, 0.4, 'sawtooth', 120); noise(0.1, 500, 0.3); } },
     death: function () { if (ensure()) tone(180, 0.4, 0.4, 'sawtooth', 55); },
-    footstep: function () {
+    // Player footstep; vol 0..1 (running 1, walking ~0.25, crouched ~0).
+    footstep: function (vol) {
       if (!ensure()) return;
+      if (vol == null) vol = 1;
       var now = Date.now();
       if (now - lastStep < 260) return;
       lastStep = now;
-      noise(0.05, 400, 0.12);
+      if (vol > 0.02) noise(0.05, 400, 0.13 * vol);
+    },
+    // Someone else's footstep, attenuated by distance.
+    stepAt: function (dist, running) {
+      if (!ensure()) return;
+      var now = Date.now();
+      if (now - lastWorldStep < 300) return;
+      var v = atten(dist) * (running ? 1 : 0.3);
+      if (v < 0.04) return;
+      lastWorldStep = now;
+      noise(0.05, 380, 0.12 * v);
     },
     plant: function () { if (ensure()) { tone(660, 0.08, 0.3); setTimeout(function () { if (ctx) tone(660, 0.08, 0.3); }, 150); } },
     beep: function (fast) { if (ensure()) tone(fast ? 1560 : 1040, 0.07, 0.35, 'sine'); },
     defusing: function () { if (ensure()) tone(520, 0.1, 0.2, 'triangle'); },
     defused: function () { if (ensure()) { tone(523, 0.15, 0.3, 'sine'); setTimeout(function () { if (ctx) tone(784, 0.25, 0.3, 'sine'); }, 160); } },
-    explosion: function () {
+    explosion: function (dist) {
       if (!ensure()) return;
-      noise(1.1, 220, 1.2);
-      tone(90, 0.9, 0.8, 'sine', 30);
+      var v = atten(dist);
+      noise(1.1, 220, 1.2 * v);
+      tone(90, 0.9, 0.8 * v, 'sine', 30);
+    },
+    heBounce: function () { if (ensure()) noise(0.04, 1200, 0.15, 'bandpass'); },
+    pin: function () { if (ensure()) tone(900, 0.05, 0.2, 'triangle', 1400); },
+    flashbang: function (dist) {
+      if (!ensure()) return;
+      var v = atten(dist);
+      tone(3400, 0.7, 0.5 * v, 'sine');           // ringing ear
+      noise(0.3, 3000, 0.8 * v, 'highpass');
+    },
+    smokePop: function (dist) {
+      if (!ensure()) return;
+      var v = atten(dist);
+      noise(0.4, 500, 0.5 * v);
+      tone(140, 0.3, 0.3 * v, 'sine', 60);
     },
     roundWin: function () {
       if (!ensure()) return;

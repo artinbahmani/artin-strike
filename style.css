@@ -39,7 +39,7 @@ html, body {
   display: flex; align-items: flex-start; justify-content: space-between;
 }
 
-#minimap { border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+#radar { border-radius: 50%; box-shadow: 0 2px 12px rgba(0,0,0,0.5); }
 
 #top-center { text-align: center; }
 
@@ -260,5 +260,5 @@ html, body {
   .controls-grid { grid-template-columns: repeat(2, auto); }
   .overlay h1 { font-size: 34px; }
   #vitals { width: 140px; }
-  #minimap { width: 100px; height: 100px; }
+  #radar { width: 100px; height: 100px; }
 }
