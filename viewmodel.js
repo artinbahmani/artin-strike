@@ -1,4 +1,4 @@
-/* fps-strike — viewmodel.js
+/* artin-strike — viewmodel.js
  * First-person weapon rendering: a procedural canvas gun per weapon, drawn
  * lower-right with walk bob, mouse sway, recoil kick, reload and throw
  * animations, plus the AWP scope overlay. Exposed as the global `Viewmodel`.

@@ -1,4 +1,4 @@
-/* fps-strike — engine.js
+/* artin-strike — engine.js
  * Wolfenstein-style raycasting engine: procedural textures, textured walls,
  * half-resolution floor/ceiling casting with distance shading, billboard
  * sprites with per-column z-buffering, and a top-down map painter.
@@ -31,33 +31,36 @@
     }
   }
 
-  function texBrick() {
+  // Dust palette: sun-baked sandstone blocks (outer walls).
+  function texSandstone() {
     var c = makeCanvas(TEX, TEX), x = c.getContext('2d');
-    x.fillStyle = '#7d4a35'; x.fillRect(0, 0, TEX, TEX);
+    x.fillStyle = '#b89b6b'; x.fillRect(0, 0, TEX, TEX);
     var bh = 8, bw = 16;
     for (var row = 0; row < TEX / bh; row++) {
       var off = (row % 2) * (bw / 2);
       for (var col = -1; col < TEX / bw + 1; col++) {
-        var shade = 100 + ((row * 31 + col * 17) % 40);
-        x.fillStyle = 'rgb(' + (shade + 25) + ',' + (shade - 10) + ',' + (shade - 35) + ')';
+        var shade = 158 + ((row * 31 + col * 17) % 34);
+        x.fillStyle = 'rgb(' + shade + ',' + (shade - 28) + ',' + (shade - 66) + ')';
         x.fillRect(col * bw + off + 1, row * bh + 1, bw - 2, bh - 2);
       }
     }
-    x.fillStyle = 'rgba(40,30,25,0.9)';
+    x.fillStyle = 'rgba(120,96,60,0.9)';
     for (var r = 0; r <= TEX / bh; r++) x.fillRect(0, r * bh - 1, TEX, 1);
-    noiseOn(x, TEX, TEX, 250, 0.5);
+    noiseOn(x, TEX, TEX, 300, 0.4);
     return c;
   }
 
-  function texConcrete() {
+  // Dust palette: smooth tan plaster with sun-bleached stains (inner walls).
+  function texPlaster() {
     var c = makeCanvas(TEX, TEX), x = c.getContext('2d');
-    x.fillStyle = '#6d6f72'; x.fillRect(0, 0, TEX, TEX);
-    noiseOn(x, TEX, TEX, 700, 0.6);
-    x.strokeStyle = 'rgba(0,0,0,0.25)'; x.lineWidth = 2;
+    x.fillStyle = '#c2a878'; x.fillRect(0, 0, TEX, TEX);
+    noiseOn(x, TEX, TEX, 700, 0.45);
+    x.fillStyle = 'rgba(160,130,85,0.35)'; // bleached patches
+    x.fillRect(6, 10, 18, 12); x.fillRect(38, 30, 20, 16); x.fillRect(14, 44, 14, 10);
+    x.strokeStyle = 'rgba(90,70,40,0.35)'; x.lineWidth = 2;
     x.strokeRect(1, 1, TEX - 2, TEX - 2);
-    x.beginPath(); x.moveTo(0, TEX / 2); x.lineTo(TEX, TEX / 2); x.stroke();
-    x.fillStyle = 'rgba(0,0,0,0.18)';
-    x.fillRect(0, TEX - 6, TEX, 6); // grime at the base
+    x.fillStyle = 'rgba(96,74,44,0.25)';
+    x.fillRect(0, TEX - 6, TEX, 6); // dusty grime at the base
     return c;
   }
 
@@ -77,29 +80,30 @@
     return c;
   }
 
-  // Floor: dusty checkered concrete tiles.
-  function texFloor() {
+  // Floor: dusty sand tiles, sun-bleached and worn.
+  function texSandFloor() {
     var c = makeCanvas(TEX, TEX), x = c.getContext('2d');
-    x.fillStyle = '#57534c'; x.fillRect(0, 0, TEX, TEX);
-    x.fillStyle = '#4c4942'; x.fillRect(0, 0, 32, 32);
+    x.fillStyle = '#a8926a'; x.fillRect(0, 0, TEX, TEX);
+    x.fillStyle = '#9c875f'; x.fillRect(0, 0, 32, 32);
     x.fillRect(32, 32, 32, 32);
-    x.strokeStyle = 'rgba(20,18,14,0.7)'; x.lineWidth = 2;
+    x.strokeStyle = 'rgba(70,56,34,0.6)'; x.lineWidth = 2;
     x.strokeRect(1, 1, 31, 31); x.strokeRect(33, 1, 31, 31);
     x.strokeRect(1, 33, 31, 31); x.strokeRect(33, 33, 31, 31);
-    noiseOn(x, TEX, TEX, 600, 0.55);
+    noiseOn(x, TEX, TEX, 700, 0.4);
     return c;
   }
 
-  // Ceiling: dark plated metal with seams and lamps.
-  function texCeiling() {
+  // Sky: hazy desert blue fading to a warm dusty horizon.
+  function texDustSky() {
     var c = makeCanvas(TEX, TEX), x = c.getContext('2d');
-    x.fillStyle = '#2e3238'; x.fillRect(0, 0, TEX, TEX);
-    x.strokeStyle = 'rgba(0,0,0,0.5)'; x.lineWidth = 2;
-    x.strokeRect(1, 1, TEX - 2, TEX - 2);
-    x.beginPath(); x.moveTo(TEX / 2, 0); x.lineTo(TEX / 2, TEX); x.stroke();
-    x.fillStyle = 'rgba(200,210,220,0.10)';
-    x.fillRect(8, 8, 16, 16); x.fillRect(40, 40, 16, 16); // dim panels
-    noiseOn(x, TEX, TEX, 350, 0.5);
+    var g = x.createLinearGradient(0, 0, 0, TEX);
+    g.addColorStop(0, '#7fa3c8');
+    g.addColorStop(0.6, '#b9c3c6');
+    g.addColorStop(1, '#d8c9a3');
+    x.fillStyle = g; x.fillRect(0, 0, TEX, TEX);
+    x.fillStyle = 'rgba(255,246,214,0.5)'; // sun glare
+    x.fillRect(40, 4, 12, 12);
+    noiseOn(x, TEX, TEX, 120, 0.15);
     return c;
   }
 
@@ -144,9 +148,9 @@
   function Raycaster(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.textures = [null, texBrick(), texConcrete(), texCrate()];
-    this.floorLevels = shadeLevels(texFloor());
-    this.ceilLevels = shadeLevels(texCeiling());
+    this.textures = [null, texSandstone(), texPlaster(), texCrate()];
+    this.floorLevels = shadeLevels(texSandFloor());
+    this.ceilLevels = shadeLevels(texDustSky());
     this.zbuffer = null;
     this.floorC = null;   // half-res floor buffer canvas
     this.floorImg = null; // its ImageData
@@ -414,10 +418,10 @@
       for (var x = 0; x < world.w; x++) {
         var v = world.grid[y][x];
         if (v > 0) {
-          ctx.fillStyle = v === 3 ? '#5a4a30' : '#4a5464';
+          ctx.fillStyle = v === 3 ? '#6b5636' : '#8a7a5a';
           ctx.fillRect(x * s, y * s, s, s);
         } else {
-          ctx.fillStyle = '#1d232e';
+          ctx.fillStyle = '#262019';
           ctx.fillRect(x * s, y * s, s, s);
         }
       }

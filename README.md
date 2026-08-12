@@ -1,10 +1,14 @@
-# fps-strike
+# Artin Strike
 
 Tactical CS-style bomb-defusal FPS vs AI bots: raycast engine, economy, buy menu, WebAudio gunshots. Canvas, no dependencies
 
+## Map
+
+A recreation of the classic **de_dust2** layout on a 48×40 tile grid — T spawn (south), mid with the double doors, catwalk/short, long A with the pit, upper/lower tunnels, and the A/B bomb sites (CT spawn north-center, A north-east, B north-west), dressed in a procedural desert palette: sandstone and tan-plaster walls, dusty sand floor, hazy sky.
+
 ## Features
 
-- Wolfenstein-style raycasting engine on canvas: DDA wall casting with half-resolution textured floor/ceiling casting and distance shading, procedurally generated textures (brick / concrete / crate), distance fog, per-column z-buffered billboard sprites
+- Wolfenstein-style raycasting engine on canvas: DDA wall casting with half-resolution textured floor/ceiling casting and distance shading, procedurally generated textures (sandstone / plaster / crate), distance fog, per-column z-buffered billboard sprites
 - First-person weapon viewmodel: procedural per-weapon gun rendered lower-right with walk bob, recoil kick, reload and weapon-switch animations, muzzle flash
 - CS-style radar (top-left): player-centered circular radar with teammates, spotted enemies and the bomb blip
 - Bomb defusal mode, 4v4: Terrorist bots pick site A or B, escort the carrier, plant the bomb, and guard it; Counter-Terrorist bots split defense, rotate on plant, and defuse. You play CT — hold **E** to defuse
@@ -29,7 +33,7 @@ Open index.html in any modern browser. No build step, no dependencies.
 ## Tech notes
 
 - The renderer casts one ray per 2px screen column into a tile grid, textures each wall slice from offscreen canvases generated at boot, then draws enemies as depth-sorted billboards clipped against the per-column z-buffer — no WebGL, no assets
-- Bots navigate a hand-designed 26×20 three-lane map with BFS over the tile grid; paths are smoothed by greedily skipping to the furthest waypoint with line-of-sight, and bots repath when body-blocked
+- Bots navigate a recreation of the de_dust2 layout (48×40 tiles) with BFS over the tile grid; paths are smoothed by greedily skipping to the furthest waypoint with line-of-sight, and bots repath when body-blocked
 - Combat is hitscan: ray-vs-circle against enemies, clipped by a DDA wall cast, so cover genuinely blocks shots for both you and the bots
 - Recoil is modeled as a yaw kick that decays exponentially plus a bloom term feeding both the shot cone and the CSS crosshair gap
 

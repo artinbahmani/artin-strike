@@ -1,4 +1,4 @@
-/* fps-strike — ai.js
+/* artin-strike — ai.js
  * Bot intelligence: BFS grid pathfinding plus a small state machine per bot
  * (objective -> hunt -> engage -> plant/defuse). Exposed as the global `AI`.
  * Bots act through the game facade `G` so all combat rules stay in game.js.

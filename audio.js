@@ -1,4 +1,4 @@
-/* fps-strike — audio.js
+/* artin-strike — audio.js
  * All sound effects synthesized with the Web Audio API. No audio files.
  * Exposed as the global `SoundFX`. The context is created lazily on the
  * first user gesture (pointer-lock click) to satisfy autoplay policies.

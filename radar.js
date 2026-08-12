@@ -1,4 +1,4 @@
-/* fps-strike — radar.js
+/* artin-strike — radar.js
  * CS-style circular radar: player-centered, rotates so the view direction is
  * always up, teammates always visible, enemies only when spotted, bomb icon.
  * Exposed as the global `Radar`.
