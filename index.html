@@ -21,6 +21,7 @@
           <span id="score-t" class="t">0</span>
         </div>
         <div id="round-label">ROUND 1</div>
+        <span id="side-badge" class="ct">CT</span>
       </div>
       <div id="killfeed"></div>
     </div>
@@ -61,17 +62,20 @@
   </div>
 
   <div id="dmg-overlay"></div>
+  <div id="flash-overlay"></div>
 
   <!-- Buy menu -->
   <div id="buy-menu" class="panel hidden">
     <h2>BUY <span id="buy-money">$800</span></h2>
     <div id="buy-items"></div>
-    <p class="panel-note">Keys 1&ndash;5 or click &middot; B to close &middot; buy phase only</p>
+    <div id="carry-row" class="buy-toggle hidden"><label><input type="checkbox" id="carry-bomb" checked> Carry the bomb on T side</label></div>
+    <p class="panel-note">Keys 1&ndash;0 or click &middot; B to close &middot; freeze time only</p>
   </div>
 
   <!-- Scoreboard -->
   <div id="scoreboard" class="panel hidden">
     <h2>SCOREBOARD</h2>
+    <div id="sb-halves"></div>
     <table>
       <thead><tr><th>Player</th><th>Team</th><th>K</th><th>D</th><th>$</th></tr></thead>
       <tbody id="sb-body"></tbody>
@@ -83,15 +87,16 @@
     <h1>ARTIN<span>//</span>STRIKE</h1>
     <p class="tagline">Tactical bomb-defusal FPS in the browser &middot; raycast engine &middot; zero dependencies</p>
     <div class="controls-grid">
-      <span><b>WASD</b> move</span><span><b>Mouse</b> aim</span><span><b>LMB</b> fire</span>
-      <span><b>R</b> reload</span><span><b>1/2/3</b> weapons</span><span><b>B</b> buy menu</span>
-      <span><b>E</b> defuse (hold)</span><span><b>Tab</b> scoreboard</span><span><b>Shift</b> walk</span>
+      <span><b>WASD</b> move</span><span><b>Mouse</b> aim</span><span><b>LMB</b> fire / throw</span>
+      <span><b>R</b> reload</span><span><b>1/2/3</b> weapons</span><span><b>4/G</b> grenade</span>
+      <span><b>RMB</b> AWP scope</span><span><b>B</b> buy menu</span><span><b>Shift</b> walk</span>
+      <span><b>E</b> plant / defuse (hold)</span><span><b>Tab</b> scoreboard</span>
     </div>
     <label class="sens-row">Mouse sensitivity
       <input id="sens" type="range" min="0.4" max="2.5" step="0.1" value="1">
     </label>
     <button id="btn-start">CLICK TO PLAY</button>
-    <p class="mode-note">You are a Counter-Terrorist. Stop the bomb. First to 6 rounds.</p>
+    <p class="mode-note">Start CT, swap to T at the half. Defuse, then plant. First to 6 rounds.</p>
     <p id="stats-line"></p>
   </div>
 

@@ -59,6 +59,14 @@ html, body {
   margin-top: 4px; font-size: 11px; letter-spacing: 3px; opacity: 0.65;
 }
 
+#side-badge {
+  display: inline-block; margin-top: 6px; padding: 2px 12px;
+  border: 1px solid var(--line); border-radius: 4px;
+  font-size: 11px; font-weight: 800; letter-spacing: 3px;
+}
+#side-badge.ct { color: var(--ct); border-color: rgba(90, 162, 255, 0.4); }
+#side-badge.t { color: var(--t); border-color: rgba(232, 179, 75, 0.4); }
+
 #killfeed {
   display: flex; flex-direction: column; gap: 4px; align-items: flex-end;
   font-size: 13px; font-family: "Consolas", monospace;
@@ -177,6 +185,13 @@ html, body {
   opacity: 0; transition: opacity 0.25s;
 }
 
+/* ---------- flashbang whiteout ---------- */
+#flash-overlay {
+  position: absolute; inset: 0; pointer-events: none;
+  background: #fff; opacity: 0; transition: opacity 0.1s linear;
+  z-index: 25;
+}
+
 /* ---------- panels (buy / scoreboard) ---------- */
 .panel {
   position: absolute; top: 50%; left: 50%;
@@ -208,6 +223,15 @@ html, body {
 .buy-item .bname { font-weight: 600; width: 110px; }
 .buy-item .bdesc { flex: 1; font-size: 11px; opacity: 0.55; }
 .buy-item .bprice { color: #7dd87d; font-family: monospace; }
+
+.buy-section {
+  margin: 10px 0 2px; font-size: 10px; letter-spacing: 3px;
+  color: var(--gold); opacity: 0.8;
+}
+.buy-toggle { margin-top: 12px; font-size: 12px; opacity: 0.85; }
+.buy-toggle input { accent-color: var(--gold); }
+
+#sb-halves { font-size: 11px; opacity: 0.6; margin: -8px 0 10px; letter-spacing: 1px; }
 
 #scoreboard table { width: 100%; border-collapse: collapse; font-size: 14px; }
 #scoreboard th {

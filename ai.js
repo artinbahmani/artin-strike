@@ -173,6 +173,18 @@
     return Math.random() < 0.5 ? -1 : 1;
   }
 
+  // Lob a flash toward the site before the entry, once per round per bot.
+  function maybePreFlash(bot, G, site) {
+    if (bot.preFlashed || !bot.nades || bot.nades.flash <= 0 || bot.nadeCd > 0) return;
+    var d = Math.hypot(bot.x - site.x - 0.5, bot.y - site.y - 0.5);
+    if (d < 9 && d > 3.5) {
+      bot.preFlashed = true;
+      bot.nades.flash--;
+      bot.nadeCd = 10 + Math.random() * 5;
+      G.botThrowNade(bot, 'flash', { x: site.x + 0.5, y: site.y + 0.5 });
+    }
+  }
+
   // Blind-fire at the last known enemy position while flashed.
   function flashedBehaviour(bot, G, dt) {
     bot.flashed -= dt;
@@ -287,6 +299,7 @@
             Math.hypot(bot.x - site.x - 0.5, bot.y - site.y - 0.5) < 2.2) {
           bot.channel = { kind: 'plant', t: 0, need: 3, x: bot.x, y: bot.y, breakOnThreat: true };
         } else {
+          maybePreFlash(bot, G, site);
           setDestination(bot, G, site.x, site.y);
           followPath(bot, G, dt, bot.speed);
         }
@@ -304,6 +317,7 @@
       }
       // Escort: move toward assigned site with a per-bot offset.
       var s2 = G.sites[bot.site];
+      maybePreFlash(bot, G, s2);
       setDestination(bot, G, s2.x + bot.offX, s2.y + bot.offY);
       followPath(bot, G, dt, bot.speed);
       return;

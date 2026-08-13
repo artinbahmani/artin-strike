@@ -1,5 +1,6 @@
 /* artin-strike — game.js
- * Game glue: map, player, bots, weapons, economy, rounds, bomb logic, HUD.
+ * Game glue: map, player, bots, weapons, grenades, economy, halves, rounds,
+ * bomb logic, HUD.
  * engine.js (Engine), audio.js (SoundFX), ai.js (AI), viewmodel.js
  * (Viewmodel) and radar.js (Radar) must load first.
  */
@@ -37,7 +38,6 @@
     '########...##########...............#######..###',
     '########...##########...............#######...##',
     '########...##########.X..##################...##',
-    '########...##########....##################...##',
     '########...##########....##################...##',
     '########...##########....##################...##',
     '########...##########....##################...##',
@@ -104,22 +104,43 @@
    * Constants
    * ================================================================== */
   var WEAPONS = {
-    knife:  { kind: 'knife',  name: 'Knife', dmg: 55, rate: 0.5,  range: 1.7, auto: false },
-    pistol: { kind: 'pistol', name: 'P250',  dmg: 25, rate: 0.19, magSize: 13, reserveSize: 52, reload: 1.6, price: 300,  spread: 0.010, bloom: 0.009, falloff: 12, auto: false },
-    rifle:  { kind: 'rifle',  name: 'AK-47', dmg: 33, rate: 0.105, magSize: 30, reserveSize: 90, reload: 2.4, price: 2700, spread: 0.008, bloom: 0.012, falloff: 15, auto: true }
+    knife:  { kind: 'knife',  name: 'Knife',        dmg: 55,  rate: 0.5,   range: 1.7, auto: false, move: 1 },
+    pistol: { kind: 'pistol', name: 'P250',         dmg: 25,  rate: 0.19,  magSize: 13, reserveSize: 52, reload: 1.6, price: 300,  spread: 0.010, bloom: 0.009, falloff: 12, auto: false, move: 1 },
+    deagle: { kind: 'deagle', name: 'Desert Eagle', dmg: 48,  rate: 0.27,  magSize: 7,  reserveSize: 35, reload: 2.2, price: 700,  spread: 0.012, bloom: 0.016, falloff: 10, auto: false, move: 0.97 },
+    rifle:  { kind: 'rifle',  name: 'AK-47',        dmg: 33,  rate: 0.105, magSize: 30, reserveSize: 90, reload: 2.4, price: 2700, spread: 0.008, bloom: 0.012, falloff: 15, auto: true,  move: 0.93 },
+    m4:     { kind: 'm4',     name: 'M4A4',         dmg: 30,  rate: 0.09,  magSize: 30, reserveSize: 90, reload: 2.2, price: 3100, spread: 0.007, bloom: 0.010, falloff: 17, auto: true,  move: 0.95 },
+    awp:    { kind: 'awp',    name: 'AWP',          dmg: 120, rate: 1.5,   magSize: 5,  reserveSize: 20, reload: 3.2, price: 4750, spread: 0.055, scopedSpread: 0.0012, bloom: 0, falloff: 60, auto: false, move: 0.88 }
   };
+  var NADES = {
+    flash: { name: 'Flashbang',  price: 200, color: '#b9bec7', fuse: 1.5 },
+    smoke: { name: 'Smoke',      price: 300, color: '#5c6b5e', fuse: 1.4 },
+    he:    { name: 'HE Grenade', price: 300, color: '#3a4a3c', fuse: 1.6 }
+  };
+  var NADE_ORDER = ['flash', 'smoke', 'he'];
   var SHOP = [
-    { id: 'rifle',  name: 'AK-47',       price: 2700, desc: '30/90 · full auto' },
-    { id: 'pistol', name: 'P250',        price: 300,  desc: '13/52 sidearm' },
-    { id: 'armor',  name: 'Kevlar Vest', price: 650,  desc: 'absorbs 40% damage' },
-    { id: 'kit',    name: 'Defuse Kit',  price: 400,  desc: 'halves defuse time' },
-    { id: 'ammo',   name: 'Full Ammo',   price: 200,  desc: 'refill all reserves' }
+    { section: 'Pistols' },
+    { id: 'p250',   name: 'P250',         price: 300,  desc: '13/52 · standard sidearm' },
+    { id: 'deagle', name: 'Desert Eagle', price: 700,  desc: '7/35 · heavy sidearm' },
+    { section: 'Rifles' },
+    { id: 'rifle',  name: 'AK-47',        price: 2700, desc: '30/90 · full auto' },
+    { id: 'm4',     name: 'M4A4',         price: 3100, desc: '30/90 · full auto, tighter' },
+    { section: 'Sniper' },
+    { id: 'awp',    name: 'AWP',          price: 4750, desc: '5/20 · bolt-action, RMB scope' },
+    { section: 'Gear' },
+    { id: 'armor',  name: 'Kevlar Vest',  price: 650,  desc: 'absorbs 40% damage' },
+    { id: 'kit',    name: 'Defuse Kit',   price: 400,  desc: 'halves defuse time (CT only)' },
+    { id: 'flash',  name: 'Flashbang',    price: 200,  desc: 'blinds on sight · max 1' },
+    { id: 'smoke',  name: 'Smoke',        price: 300,  desc: 'blocks vision ~15s · max 1' },
+    { id: 'he',     name: 'HE Grenade',   price: 300,  desc: 'radius damage · max 1' },
+    { id: 'ammo',   name: 'Full Ammo',    price: 200,  desc: 'refill all reserves' }
   ];
 
-  var BUY_TIME = 8, ROUND_TIME = 100, BOMB_TIME = 30, END_TIME = 4;
+  var BUY_TIME = 5, ROUND_TIME = 100, BOMB_TIME = 30, END_TIME = 4;
   var PLANT_TIME = 3, DEFUSE_TIME = 5, DEFUSE_KIT_TIME = 2.5;
-  var WIN_ROUNDS = 6, MAX_ROUNDS = 11;
+  var WIN_ROUNDS = 6, MAX_ROUNDS = 11, HALF_ROUND = 5;
   var KILL_REWARD = 300, WIN_REWARD = 3250, LOSS_REWARD = 1900, START_MONEY = 800;
+  var LOSS_STEP = 500, PLANT_BONUS = 800, MAX_MONEY = 16000;
+  var SMOKE_TIME = 15, SMOKE_RADIUS = 1.25;
 
   var CT_NAMES = ['Raptor', 'Vex', 'Nomad'];
   var T_NAMES = ['Saber', 'Ghost', 'Jackal', 'Rook'];
@@ -131,11 +152,13 @@
     isPlayer: true, name: 'You', team: 'CT',
     x: 2.5, y: 17.5, dir: -Math.PI / 2,
     hp: 100, armor: 0, alive: true,
-    weapons: { rifle: null, pistol: { mag: 13, reserve: 52 }, knife: true },
+    weapons: { rifle: null, pistol: { kind: 'pistol', mag: 13, reserve: 52 }, knife: true },
     current: 'pistol',
+    nades: { flash: 0, smoke: 0, he: 0 }, nadeSel: 'flash',
+    hasBomb: false, carryBomb: true,
     money: START_MONEY, kills: 0, deaths: 0, kit: false,
     bloom: 0, kick: 0, fireT: 0, reloading: 0, switching: 0,
-    speed: 0, muzzle: 0
+    speed: 0, muzzle: 0, scoped: false, throwT: 0, flashedT: 0
   };
 
   var bots = [];
@@ -154,7 +177,14 @@
   var shake = 0;
   var bannerT = 0;
   var defusing = { active: false, t: 0 };
+  var planting = { active: false, t: 0 };
   var mouseDown = false;
+  var scoresAtHalf = null;      // {ct, t} snapshot at the side swap
+  var pendingHalftime = false;  // swap sides before the next round starts
+  var lossStreak = { ct: 0, t: 0 };
+  var plantedThisRound = false; // T side gets the plant bonus even on a loss
+  var grenades = [];            // live projectiles
+  var smokes = [];              // {x, y, t} active plumes
 
   /* ================================================================== *
    * DOM
@@ -164,6 +194,7 @@
   var ray = new Engine.Raycaster(canvas);
   var el = {
     timer: $('timer'), scoreCt: $('score-ct'), scoreT: $('score-t'), roundLabel: $('round-label'),
+    sideBadge: $('side-badge'),
     healthFill: $('health-fill'), healthNum: $('health-num'),
     armorFill: $('armor-fill'), armorNum: $('armor-num'),
     money: $('money'), weaponName: $('weapon-name'),
@@ -171,9 +202,11 @@
     hint: $('hint'), killfeed: $('killfeed'),
     banner: $('banner'), bannerTitle: $('banner-title'), bannerSub: $('banner-sub'),
     defuseWrap: $('defuse-wrap'), defuseFill: $('defuse-fill'), defuseLabel: $('defuse-label'),
-    spectate: $('spectate-label'), dmg: $('dmg-overlay'), hitmarker: $('hitmarker'),
+    spectate: $('spectate-label'), dmg: $('dmg-overlay'), flash: $('flash-overlay'),
+    hitmarker: $('hitmarker'),
     buyMenu: $('buy-menu'), buyItems: $('buy-items'), buyMoney: $('buy-money'),
-    scoreboard: $('scoreboard'), sbBody: $('sb-body'),
+    carryRow: $('carry-row'), carry: $('carry-bomb'),
+    scoreboard: $('scoreboard'), sbBody: $('sb-body'), sbHalves: $('sb-halves'),
     start: $('start-overlay'), pause: $('pause-overlay'), match: $('match-overlay'),
     matchResult: $('match-result'), matchScore: $('match-score'),
     statsLine: $('stats-line'), sens: $('sens'), crosshair: $('crosshair')
@@ -228,7 +261,9 @@
     if (canBe(e.x + dx, e.y, r)) e.x += dx;
     if (canBe(e.x, e.y + dy, r)) e.y += dy;
   }
-  function los(x1, y1, x2, y2) { return AI.losGrid(world, x1, y1, x2, y2); }
+  // Grid LOS (walls only) vs vision LOS (walls + smoke plumes).
+  function gridLos(x1, y1, x2, y2) { return AI.losGrid(world, x1, y1, x2, y2); }
+  function los(x1, y1, x2, y2) { return gridLos(x1, y1, x2, y2) && !smokeBetween(x1, y1, x2, y2); }
 
   function wallDist(px, py, ang) {
     var h = Engine.castRay(world, px, py, Math.cos(ang), Math.sin(ang));
@@ -246,18 +281,13 @@
 
   function foesOf(team) {
     var out = [];
-    var i;
-    if (team === 'CT') {
-      for (i = 0; i < bots.length; i++) if (bots[i].team === 'T') out.push(bots[i]);
-    } else {
-      out.push(player);
-      for (i = 0; i < bots.length; i++) if (bots[i].team === 'CT') out.push(bots[i]);
-    }
+    if (player.team !== team) out.push(player);
+    for (var i = 0; i < bots.length; i++) if (bots[i].team !== team) out.push(bots[i]);
     return out;
   }
   function teamAlive(team) {
-    var n = 0, list = foesOf(team === 'CT' ? 'T' : 'CT');
-    for (var i = 0; i < list.length; i++) if (list[i].alive) n++;
+    var n = player.team === team && player.alive ? 1 : 0;
+    for (var i = 0; i < bots.length; i++) if (bots[i].team === team && bots[i].alive) n++;
     return n;
   }
 
@@ -278,8 +308,9 @@
       weapon: { kind: 'pistol', mag: 13 },
       speed: rand(2.5, 2.9), reaction: rand(0.35, 0.65),
       site: 'A', offX: 0, offY: 0, hasBomb: false,
-      money: START_MONEY, kills: 0, deaths: 0,
-      flash: 0, moving: false,
+      money: START_MONEY, kills: 0, deaths: 0, kit: false,
+      flash: 0, flashed: 0, moving: false,
+      nades: { flash: 0, he: 0 }, nadeCd: rand(2, 8), preFlashed: false,
       path: null, pathI: 0, repathT: 0, goal: null,
       lastSeen: null, trackRef: null, trackT: 0, reacted: false,
       burstLeft: 0, fireT: 0, strafeT: 0, strafeDir: 1, reloadT: 0,
@@ -313,8 +344,10 @@
       target.hp = 0;
       target.alive = false;
       target.deaths++;
-      attacker.kills++;
-      attacker.money = Math.min(16000, attacker.money + KILL_REWARD);
+      if (attacker !== target) {
+        attacker.kills++;
+        attacker.money = Math.min(MAX_MONEY, attacker.money + KILL_REWARD);
+      }
       addFeed(attacker, target);
       SoundFX.death();
       // Bomb carrier drops the bomb where they died.
@@ -332,6 +365,8 @@
     el.spectate.classList.add('show');
     spectate = null;
     defusing.active = false;
+    planting.active = false;
+    player.scoped = false;
   }
 
   // Hitscan shot. Shooter may be the player or a bot.
@@ -378,9 +413,103 @@
   }
 
   /* ================================================================== *
+   * Grenades — lobbed projectiles with wall/floor bounces and a fuse.
+   * Flashbangs blind by view angle + distance, smokes block vision LOS,
+   * HE deals radius damage with falloff.
+   * ================================================================== */
+  var nadeSprites = {};
+  NADE_ORDER.forEach(function (t) { nadeSprites[t] = Engine.makeGrenade(NADES[t].color); });
+  var spriteSmoke = Engine.makeSmokePuff();
+
+  function spawnNade(type, thrower, ang, speed) {
+    grenades.push({
+      type: type, thrower: thrower,
+      x: thrower.x + Math.cos(ang) * 0.4, y: thrower.y + Math.sin(ang) * 0.4,
+      z: 0.55, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, vz: 2.3,
+      fuse: NADES[type].fuse
+    });
+  }
+
+  // True when an active smoke plume sits on the segment.
+  function smokeBetween(x1, y1, x2, y2) {
+    for (var i = 0; i < smokes.length; i++) {
+      var s = smokes[i];
+      var dx = x2 - x1, dy = y2 - y1;
+      var len2 = dx * dx + dy * dy;
+      var t = len2 > 0 ? ((s.x - x1) * dx + (s.y - y1) * dy) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      var px = x1 + dx * t - s.x, py = y1 + dy * t - s.y;
+      if (px * px + py * py < SMOKE_RADIUS * SMOKE_RADIUS) return true;
+    }
+    return false;
+  }
+
+  function updateGrenades(dt) {
+    for (var i = grenades.length - 1; i >= 0; i--) {
+      var g = grenades[i];
+      g.fuse -= dt;
+      g.vz -= 9.5 * dt;
+      var nx = g.x + g.vx * dt, ny = g.y + g.vy * dt;
+      if (world.solid(nx, g.y)) { g.vx = -g.vx * 0.45; SoundFX.heBounce(); } else g.x = nx;
+      if (world.solid(g.x, ny)) { g.vy = -g.vy * 0.45; SoundFX.heBounce(); } else g.y = ny;
+      g.z += g.vz * dt;
+      if (g.z < 0.08) { // floor bounce, losing energy
+        g.z = 0.08;
+        g.vz = Math.abs(g.vz) > 0.8 ? -g.vz * 0.4 : 0;
+        if (g.vz !== 0) SoundFX.heBounce();
+        g.vx *= 0.55; g.vy *= 0.55;
+      }
+      if (g.fuse <= 0) { grenades.splice(i, 1); detonateNade(g); }
+    }
+    for (i = smokes.length - 1; i >= 0; i--) {
+      smokes[i].t -= dt;
+      if (smokes[i].t <= 0) smokes.splice(i, 1);
+    }
+  }
+
+  function detonateNade(g) {
+    var pd = Math.hypot(player.x - g.x, player.y - g.y);
+    if (g.type === 'smoke') {
+      smokes.push({ x: g.x, y: g.y, t: SMOKE_TIME });
+      SoundFX.smokePop(pd);
+      return;
+    }
+    if (g.type === 'he') {
+      SoundFX.explosion(pd);
+      shake = Math.max(shake, Math.max(0, 0.7 - pd * 0.06));
+      var all = [player].concat(bots);
+      all.forEach(function (e) {
+        if (!e.alive) return;
+        var d = Math.hypot(e.x - g.x, e.y - g.y);
+        if (d < 5 && gridLos(g.x, g.y, e.x, e.y)) applyDamage(e, 92 * (1 - d / 5) + 6, g.thrower);
+      });
+      return;
+    }
+    // Flashbang: whiteout scales with distance, LOS and view angle.
+    SoundFX.flashbang(pd);
+    if (player.alive && pd < 14 && gridLos(g.x, g.y, player.x, player.y)) {
+      var facing = Math.abs(angleDiff(Math.atan2(g.y - player.y, g.x - player.x), player.dir));
+      var look = pd < 1.6 ? 1 : Math.max(0.12, 1 - facing / 2.2);
+      var mag = (1 - pd / 14) * look;
+      if (mag > 0.04) player.flashedT = Math.max(player.flashedT, 0.8 + 3.2 * mag);
+    }
+    bots.forEach(function (b) {
+      if (!b.alive) return;
+      var d = Math.hypot(b.x - g.x, b.y - g.y);
+      if (d < 13 && gridLos(g.x, g.y, b.x, b.y)) {
+        b.flashed = Math.max(b.flashed, 1.4 + 2.6 * (1 - d / 13));
+      }
+    });
+  }
+
+  /* ================================================================== *
    * Player actions
    * ================================================================== */
-  function currentWeapon() { return WEAPONS[player.current]; }
+  function currentWeapon() {
+    if (player.current === 'nade') return NADES[player.nadeSel];
+    if (player.current === 'knife') return WEAPONS.knife;
+    return WEAPONS[player.weapons[player.current].kind];
+  }
 
   function playerFire() {
     if (!player.alive || player.reloading > 0 || player.switching > 0) return;
@@ -395,24 +524,50 @@
       shake = Math.max(shake, 0.06);
       return;
     }
+    if (player.current === 'nade') {
+      if (player.nades[player.nadeSel] <= 0) { SoundFX.dryFire(); player.fireT = 0.3; return; }
+      player.nades[player.nadeSel]--;
+      spawnNade(player.nadeSel, player, player.dir, 8.5);
+      SoundFX.pin();
+      player.throwT = 0.55;
+      player.fireT = 0.75;
+      // Out of this type: cycle to the next held grenade, or back to a gun.
+      var owned = ownedNades();
+      if (owned.length) {
+        player.nadeSel = owned[0];
+      } else {
+        player.current = player.weapons.rifle ? 'rifle' : 'pistol';
+        player.switching = 0.3;
+      }
+      return;
+    }
     var w = player.weapons[player.current];
     if (w.mag <= 0) { SoundFX.dryFire(); player.fireT = 0.25; return; }
     w.mag--;
     player.fireT = wdef.rate;
 
-    // Spread: base + bloom from sustained fire + movement penalty.
-    var spread = wdef.spread + player.bloom + Math.min(0.03, player.speed * 0.008);
+    // Spread: base + bloom from sustained fire + movement penalty. A scoped
+    // AWP ignores all of it; an unscoped AWP is wildly inaccurate.
+    var spread = (wdef.scopedSpread != null && player.scoped)
+      ? wdef.scopedSpread
+      : wdef.spread + player.bloom + Math.min(0.03, player.speed * 0.008);
     var ang = player.dir + (Math.random() + Math.random() - 1) * spread;
     player.bloom = Math.min(0.09, player.bloom + wdef.bloom);
-    player.kick += rand(-0.006, 0.006) + (Math.random() < 0.5 ? -0.004 : 0.004); // recoil yaw kick
-    shake = Math.max(shake, player.current === 'rifle' ? 0.12 : 0.08);
+    var kickMul = wdef.kind === 'awp' ? 2.5 : wdef.kind === 'deagle' ? 1.5 : 1;
+    player.kick += (rand(-0.006, 0.006) + (Math.random() < 0.5 ? -0.004 : 0.004)) * kickMul;
+    shake = Math.max(shake, wdef.kind === 'awp' ? 0.3 :
+      (wdef.kind === 'rifle' || wdef.kind === 'm4') ? 0.12 : 0.08);
     player.muzzle = 0.06;
     SoundFX.shot(wdef.kind);
     fireBullet(player, ang, wdef);
+    if (wdef.kind === 'awp') { // bolt-action: unscope and rechamber
+      player.scoped = false;
+      setTimeout(function () { SoundFX.bolt(); }, 350);
+    }
   }
 
   function playerReload() {
-    if (player.current === 'knife' || player.reloading > 0 || !player.alive) return;
+    if (player.current === 'knife' || player.current === 'nade' || player.reloading > 0 || !player.alive) return;
     var w = player.weapons[player.current];
     var wdef = currentWeapon();
     if (w.mag >= wdef.magSize || w.reserve <= 0) return;
@@ -429,6 +584,33 @@
     player.reloading = 0;
     player.switching = 0.4;
     player.bloom = 0;
+    player.scoped = false;
+  }
+
+  function ownedNades() {
+    return NADE_ORDER.filter(function (t) { return player.nades[t] > 0; });
+  }
+  // Key 4 / G: equip a grenade, or cycle to the next type if one is out.
+  function cycleNade() {
+    if (!player.alive) return;
+    var owned = ownedNades();
+    if (!owned.length) return;
+    if (player.current !== 'nade') {
+      player.current = 'nade';
+      player.nadeSel = owned[0];
+    } else {
+      player.nadeSel = owned[(owned.indexOf(player.nadeSel) + 1) % owned.length];
+    }
+    player.reloading = 0;
+    player.switching = 0.3;
+    player.bloom = 0;
+    player.scoped = false;
+  }
+
+  function toggleScope() {
+    if (!player.alive || phase !== 'live') return;
+    if (player.current !== 'rifle' || !player.weapons.rifle || player.weapons.rifle.kind !== 'awp') return;
+    player.scoped = !player.scoped;
   }
 
   /* ================================================================== *
@@ -458,20 +640,28 @@
         bot.reloadT = 2.2;
       }
     },
+    botThrowNade: function (bot, type, target) {
+      if (!NADES[type]) return;
+      var ang = Math.atan2(target.y - bot.y, target.x - bot.x);
+      var d = Math.hypot(target.x - bot.x, target.y - bot.y);
+      spawnNade(type, bot, ang, Math.min(10, 4 + d * 0.75));
+      SoundFX.pin();
+    },
     onPlant: function (b) {
       bomb.planted = true;
+      plantedThisRound = true;
       bomb.dropped = null;
       bomb.x = b.x; bomb.y = b.y;
       bomb.timer = BOMB_TIME;
       b.hasBomb = false;
-      addFeedText(b.name + ' planted the bomb');
-      showBanner('BOMB PLANTED', 'defend... no — DEFUSE IT!', 2.5);
+      addFeedText(b.isPlayer ? 'You planted the bomb' : b.name + ' planted the bomb');
+      showBanner('BOMB PLANTED', player.team === 'T' ? 'defend it until it blows!' : 'defuse it!', 2.5);
       SoundFX.plant();
     },
     onDefuse: function (b) {
       if (!bomb.planted) return;
       bomb.planted = false;
-      endRound('CT', b.name + ' defused the bomb');
+      endRound('CT', 'Bomb defused');
     },
     onPickupBomb: function (b) {
       bomb.dropped = null;
@@ -494,18 +684,21 @@
    * Round flow
    * ================================================================== */
   function placeUnits() {
-    // Player at first CT spawn.
-    var ps = ctSpawns[0];
+    // Player takes the first spawn of their current side.
+    var mySpawns = player.team === 'CT' ? ctSpawns : tSpawns;
+    var ps = mySpawns[0];
     player.x = ps.x; player.y = ps.y;
-    player.dir = Math.atan2(sites.A.y + 0.5 - ps.y, sites.A.x + 0.5 - ps.x);
-    var ci = 1, ti = 0;
+    var faceSite = player.team === 'CT' ? sites.A : sites.B;
+    player.dir = Math.atan2(faceSite.y + 0.5 - ps.y, faceSite.x + 0.5 - ps.x);
+    var ci = player.team === 'CT' ? 1 : 0, ti = player.team === 'T' ? 1 : 0;
     bots.forEach(function (b) {
       var sp = b.team === 'CT' ? ctSpawns[ci++ % ctSpawns.length] : tSpawns[ti++ % tSpawns.length];
       b.x = sp.x; b.y = sp.y;
       b.dir = Math.atan2(2.5 - sp.y, (b.team === 'CT' ? sites.A.x : sites.B.x) + 0.5 - sp.x);
       b.hp = 100; b.alive = true;
       b.path = null; b.pathI = 0; b.goal = null; b.channel = null;
-      b.lastSeen = null; b.flash = 0; b.reloadT = 0; b.burstLeft = 0; b.fireT = 0;
+      b.lastSeen = null; b.flash = 0; b.flashed = 0; b.reloadT = 0;
+      b.burstLeft = 0; b.fireT = 0;
       b.hasBomb = false;
     });
   }
@@ -523,9 +716,14 @@
       b.site = tSite;
       b.offX = (i % 2) * 1.6 - 0.8; b.offY = ((i / 2) | 0) * 1.6;
     });
-    // Bomb to a random T.
-    tBots[(Math.random() * tBots.length) | 0].hasBomb = true;
-    // Bot economy: buy a rifle when they can afford one.
+    // Bomb: the player carries it on T side unless the toggle declines.
+    if (player.team === 'T' && player.carryBomb) {
+      player.hasBomb = true;
+    } else if (tBots.length) {
+      tBots[(Math.random() * tBots.length) | 0].hasBomb = true;
+    }
+    // Bot economy: buy a rifle when they can afford one, plus a kit for CTs
+    // with spare cash and one flash + one HE per round.
     bots.forEach(function (b) {
       if (b.money >= WEAPONS.rifle.price + 1000) {
         b.money -= WEAPONS.rifle.price;
@@ -533,7 +731,27 @@
       } else {
         b.weapon = { kind: 'pistol', mag: WEAPONS.pistol.magSize };
       }
+      if (b.team === 'CT' && !b.kit && b.money >= 1400) { b.money -= 400; b.kit = true; }
+      b.nades = { flash: 1, he: 1 };
+      b.preFlashed = false;
+      b.nadeCd = rand(2, 8);
     });
+  }
+
+  // Halftime: the player (and their three teammates) swaps to the T side.
+  function swapSides() {
+    scoresAtHalf = { ct: scores.ct, t: scores.t };
+    lossStreak.ct = 0; lossStreak.t = 0;
+    player.team = player.team === 'CT' ? 'T' : 'CT';
+    bots.forEach(function (b) {
+      b.team = b.team === 'CT' ? 'T' : 'CT';
+      b.sprite = b.team === 'CT' ? spriteCT : spriteT;
+    });
+  }
+
+  function refreshSideBadge() {
+    el.sideBadge.textContent = player.team;
+    el.sideBadge.className = player.team === 'CT' ? 'ct' : 't';
   }
 
   function nextRound() {
@@ -541,15 +759,22 @@
     phase = 'buy';
     phaseTimer = BUY_TIME;
     bomb = { planted: false, x: 0, y: 0, timer: BOMB_TIME, dropped: null, beepT: 0 };
+    grenades = []; smokes = [];
+    plantedThisRound = false;
     blips = []; noise = null; spectate = null;
     player.hp = 100; player.alive = true;
     player.bloom = 0; player.kick = 0; player.reloading = 0; player.fireT = 0;
-    defusing.active = false;
+    player.hasBomb = false; player.scoped = false; player.throwT = 0; player.flashedT = 0;
+    defusing.active = false; planting.active = false;
     el.spectate.classList.remove('show');
+    var swapped = false;
+    if (pendingHalftime) { pendingHalftime = false; swapped = true; swapSides(); }
     placeUnits();
     assignRoles();
+    refreshSideBadge();
     el.roundLabel.textContent = 'ROUND ' + roundNum;
-    showBanner('ROUND ' + roundNum, 'buy phase — press B', 2.5);
+    if (swapped) showBanner('HALFTIME', 'sides swapped — you are now a TERRORIST', 3.5);
+    else showBanner('ROUND ' + roundNum, 'freeze time — press B to buy', 2.5);
     openBuy();
   }
 
@@ -557,59 +782,81 @@
     phase = 'live';
     phaseTimer = ROUND_TIME;
     closeBuy();
-    showBanner('LIVE', 'defend sites A and B', 2);
+    showBanner('LIVE', player.team === 'T'
+      ? (player.hasBomb ? 'plant the bomb at site A or B' : 'escort the carrier — take a site')
+      : 'defend sites A and B', 2);
   }
 
   function endRound(winner, reason) {
     if (phase === 'roundEnd' || phase === 'matchEnd') return;
     phase = 'roundEnd';
     phaseTimer = END_TIME;
-    defusing.active = false;
+    defusing.active = false; planting.active = false;
     if (winner === 'CT') scores.ct++; else scores.t++;
     el.scoreCt.textContent = scores.ct;
     el.scoreT.textContent = scores.t;
 
-    var i, reward = winner === 'CT' ? WIN_REWARD : LOSS_REWARD;
-    player.money = Math.min(16000, player.money + reward);
-    for (i = 0; i < bots.length; i++) {
-      bots[i].money = Math.min(16000, bots[i].money + (bots[i].team === winner ? WIN_REWARD : LOSS_REWARD));
+    // Economy: winner takes the win bonus; the loss bonus grows with each
+    // consecutive loss. A plant pays the whole T side even on a lost round.
+    var loser = winner === 'CT' ? 'T' : 'CT';
+    lossStreak[winner] = 0;
+    lossStreak[loser] = Math.min(4, lossStreak[loser] + 1);
+    var lossPay = LOSS_REWARD + (lossStreak[loser] - 1) * LOSS_STEP;
+    function pay(team) {
+      var p = team === winner ? WIN_REWARD : lossPay;
+      if (team === 'T' && plantedThisRound && winner !== 'T') p += PLANT_BONUS;
+      return p;
+    }
+    player.money = Math.min(MAX_MONEY, player.money + pay(player.team));
+    for (var i = 0; i < bots.length; i++) {
+      bots[i].money = Math.min(MAX_MONEY, bots[i].money + pay(bots[i].team));
     }
 
-    var won = winner === 'CT';
+    var won = winner === player.team;
     showBanner(won ? 'ROUND WON' : 'ROUND LOST', reason, 3);
     if (won) SoundFX.roundWin(); else SoundFX.roundLose();
 
     var over = scores.ct >= WIN_ROUNDS || scores.t >= WIN_ROUNDS || roundNum >= MAX_ROUNDS;
     matchOverPending = over;
+    if (roundNum === HALF_ROUND && !over) pendingHalftime = true;
   }
 
   function endMatch() {
     phase = 'matchEnd';
-    var won = scores.ct > scores.t;
-    var draw = scores.ct === scores.t;
+    // The player scored the first half as CT and the second as T.
+    var mine = scoresAtHalf ? scoresAtHalf.ct + (scores.t - scoresAtHalf.t) : scores.ct;
+    var theirs = scoresAtHalf ? scoresAtHalf.t + (scores.ct - scoresAtHalf.ct) : scores.t;
+    var won = mine > theirs;
+    var draw = mine === theirs;
     el.matchResult.textContent = draw ? 'DRAW' : won ? 'VICTORY' : 'DEFEAT';
     el.matchResult.className = won ? 'win' : 'lose';
-    el.matchScore.textContent = 'CT ' + scores.ct + ' — ' + scores.t + ' T';
+    el.matchScore.textContent = 'CT ' + scores.ct + ' — ' + scores.t + ' T  ·  your team ' + mine + '–' + theirs;
     el.match.classList.remove('hidden');
     document.exitPointerLock && document.exitPointerLock();
 
     var s = loadStats();
     s.matches++;
     if (won) s.wins++;
-    var sc = scores.ct + '-' + scores.t;
-    if (!s.bestScore || scores.ct > parseInt(s.bestScore, 10)) s.bestScore = sc;
+    var sc = mine + '-' + theirs;
+    if (!s.bestScore || mine > parseInt(s.bestScore, 10)) s.bestScore = sc;
     saveStats(s);
     renderStatsLine();
   }
 
   function restartMatch() {
     scores.ct = 0; scores.t = 0; roundNum = 0;
+    scoresAtHalf = null; pendingHalftime = false;
+    lossStreak = { ct: 0, t: 0 }; plantedThisRound = false;
+    player.team = 'CT';
     player.money = START_MONEY; player.kills = 0; player.deaths = 0;
     player.armor = 0; player.kit = false;
-    player.weapons = { rifle: null, pistol: { mag: 13, reserve: 52 }, knife: true };
+    player.nades = { flash: 0, smoke: 0, he: 0 }; player.nadeSel = 'flash';
+    player.hasBomb = false; player.scoped = false; player.flashedT = 0;
+    player.weapons = { rifle: null, pistol: { kind: 'pistol', mag: 13, reserve: 52 }, knife: true };
     player.current = 'pistol';
     spawnBots();
     el.match.classList.add('hidden');
+    refreshSideBadge();
     nextRound();
   }
 
@@ -617,12 +864,12 @@
     if (phase !== 'live') return;
     if (bomb.planted) {
       if (bomb.timer <= 0) { explode(); return; }
-      if (teamAlive('CT') === 0) endRound('T', 'counter-terrorists eliminated');
+      if (teamAlive('CT') === 0) endRound('T', 'Elimination');
       return;
     }
-    if (teamAlive('T') === 0) endRound('CT', 'terrorists eliminated');
-    else if (teamAlive('CT') === 0) endRound('T', 'counter-terrorists eliminated');
-    else if (phaseTimer <= 0) endRound('CT', 'time expired — site held');
+    if (teamAlive('T') === 0) endRound('CT', 'Elimination');
+    else if (teamAlive('CT') === 0) endRound('T', 'Elimination');
+    else if (phaseTimer <= 0) endRound('CT', 'Time expired — site held');
   }
 
   function explode() {
@@ -633,16 +880,16 @@
     all.forEach(function (e) {
       if (!e.alive) return;
       var d = Math.hypot(e.x - bomb.x, e.y - bomb.y);
-      if (d < 9 && los(bomb.x, bomb.y, e.x, e.y)) {
+      if (d < 9 && gridLos(bomb.x, bomb.y, e.x, e.y)) {
         applyDamage(e, 220 * (1 - d / 9), { name: 'the bomb', team: e.team === 'CT' ? 'T' : 'CT', kills: 0, money: 0, isPlayer: false });
       }
     });
     bomb.planted = false;
-    endRound('T', 'bomb detonated');
+    endRound('T', 'Target bombed');
   }
 
   /* ================================================================== *
-   * Bomb beeping + player defuse
+   * Bomb beeping + player defuse / plant channels
    * ================================================================== */
   function updateBomb(dt) {
     if (!bomb.planted) return;
@@ -653,8 +900,8 @@
       SoundFX.beep(bomb.timer < 8);
       bomb.beepT = Math.max(0.15, bomb.timer / BOMB_TIME);
     }
-    // Player defuse: hold E near the bomb.
-    if (player.alive && keys.KeyE &&
+    // Player defuse (CT side): hold E near the bomb.
+    if (player.team === 'CT' && player.alive && keys.KeyE &&
         Math.hypot(player.x - bomb.x, player.y - bomb.y) < 1.3) {
       if (!defusing.active) { defusing.active = true; defusing.t = 0; }
       defusing.t += dt;
@@ -664,58 +911,118 @@
         bomb.planted = false;
         defusing.active = false;
         SoundFX.defused();
-        endRound('CT', 'you defused the bomb');
+        endRound('CT', 'Bomb defused');
       }
     } else {
       defusing.active = false;
     }
   }
 
+  // The site the player is standing in, or null.
+  function nearSite() {
+    var keys2 = ['A', 'B'];
+    for (var i = 0; i < 2; i++) {
+      var s = sites[keys2[i]];
+      if (Math.hypot(player.x - s.x - 0.5, player.y - s.y - 0.5) < 2.2 &&
+          gridLos(player.x, player.y, s.x + 0.5, s.y + 0.5)) return keys2[i];
+    }
+    return null;
+  }
+
+  // Player plant (T side, carrying the bomb): hold E inside a site.
+  function updatePlanting(dt) {
+    if (phase !== 'live' || !player.alive || player.team !== 'T' || !player.hasBomb) {
+      planting.active = false;
+      return;
+    }
+    if (nearSite() && keys.KeyE) {
+      if (!planting.active) { planting.active = true; planting.t = 0; }
+      planting.t += dt;
+      if ((planting.t * 4 | 0) !== ((planting.t - dt) * 4 | 0)) SoundFX.defusing();
+      if (planting.t >= PLANT_TIME) {
+        planting.active = false;
+        G.onPlant(player);
+      }
+    } else {
+      planting.active = false;
+    }
+  }
+
   /* ================================================================== *
    * Buy menu
    * ================================================================== */
+  var buyKeys = [];  // item ids in display order, for number-key buys
+  var buyRows = [];  // matching row elements
+
+  function shopItem(id) {
+    for (var i = 0; i < SHOP.length; i++) if (SHOP[i].id === id) return SHOP[i];
+    return null;
+  }
+
   function buildBuyMenu() {
     el.buyItems.innerHTML = '';
-    SHOP.forEach(function (item, i) {
+    buyKeys = []; buyRows = [];
+    SHOP.forEach(function (item) {
+      if (item.section) {
+        var h = document.createElement('div');
+        h.className = 'buy-section';
+        h.textContent = item.section;
+        el.buyItems.appendChild(h);
+        return;
+      }
+      buyKeys.push(item.id);
       var div = document.createElement('div');
       div.className = 'buy-item';
       div.dataset.item = item.id;
-      div.innerHTML = '<span class="key">' + (i + 1) + '</span>' +
+      var keyLabel = buyKeys.length <= 10 ? String(buyKeys.length % 10) : '-';
+      div.innerHTML = '<span class="key">' + keyLabel + '</span>' +
         '<span class="bname">' + item.name + '</span>' +
         '<span class="bdesc">' + item.desc + '</span>' +
         '<span class="bprice">$' + item.price + '</span>';
       div.addEventListener('click', function () { buy(item.id); });
       el.buyItems.appendChild(div);
+      buyRows.push(div);
     });
+  }
+
+  function isOwned(id) {
+    var pw = player.weapons;
+    if (id === 'p250') return pw.pistol.kind === 'pistol' && pw.pistol.reserve >= WEAPONS.pistol.reserveSize;
+    if (id === 'deagle') return pw.pistol.kind === 'deagle';
+    if (id === 'rifle' || id === 'm4' || id === 'awp') return !!(pw.rifle && pw.rifle.kind === id);
+    if (id === 'armor') return player.armor >= 100;
+    if (id === 'kit') return player.kit || player.team !== 'CT';
+    if (NADES[id]) return player.nades[id] >= 1;
+    return false;
   }
 
   function refreshBuyMenu() {
     el.buyMoney.textContent = fmtMoney(player.money);
-    var rows = el.buyItems.children;
-    SHOP.forEach(function (item, i) {
-      var owned = (item.id === 'rifle' && player.weapons.rifle) ||
-                  (item.id === 'pistol') ||
-                  (item.id === 'armor' && player.armor >= 100) ||
-                  (item.id === 'kit' && player.kit);
+    buyKeys.forEach(function (id, i) {
+      var item = shopItem(id);
       var afford = player.money >= item.price;
-      rows[i].classList.toggle('disabled', !afford || !!owned);
+      buyRows[i].classList.toggle('disabled', !afford || isOwned(id));
     });
+    el.carryRow.classList.toggle('hidden', player.team !== 'T');
   }
 
   function buy(id) {
     if (phase !== 'buy' || !player.alive) return;
-    var item = SHOP.filter(function (s) { return s.id === id; })[0];
-    if (!item || player.money < item.price) return;
-    if (id === 'rifle') {
-      if (player.weapons.rifle) return;
-      player.weapons.rifle = { mag: WEAPONS.rifle.magSize, reserve: WEAPONS.rifle.reserveSize };
+    var item = shopItem(id);
+    if (!item || player.money < item.price || isOwned(id)) return;
+    if (id === 'p250') {
+      player.weapons.pistol = { kind: 'pistol', mag: WEAPONS.pistol.magSize, reserve: WEAPONS.pistol.reserveSize };
+    } else if (id === 'deagle') {
+      player.weapons.pistol = { kind: 'deagle', mag: WEAPONS.deagle.magSize, reserve: WEAPONS.deagle.reserveSize };
+    } else if (id === 'rifle' || id === 'm4' || id === 'awp') {
+      player.weapons.rifle = { kind: id, mag: WEAPONS[id].magSize, reserve: WEAPONS[id].reserveSize };
       switchWeapon(1);
-    } else if (id === 'pistol') return; // already standard issue
-    else if (id === 'armor') { if (player.armor >= 100) return; player.armor = 100; }
-    else if (id === 'kit') { if (player.kit) return; player.kit = true; }
+    } else if (id === 'armor') { player.armor = 100; }
+    else if (id === 'kit') { player.kit = true; }
+    else if (NADES[id]) { player.nades[id] = 1; }
     else if (id === 'ammo') {
-      if (player.weapons.rifle) player.weapons.rifle.reserve = WEAPONS.rifle.reserveSize;
-      player.weapons.pistol.reserve = WEAPONS.pistol.reserveSize;
+      if (player.weapons.rifle) player.weapons.rifle.reserve = WEAPONS[player.weapons.rifle.kind].reserveSize;
+      player.weapons.pistol.reserve = WEAPONS[player.weapons.pistol.kind].reserveSize;
     }
     player.money -= item.price;
     SoundFX.buy();
@@ -772,6 +1079,10 @@
         '<td>' + e.kills + '</td><td>' + e.deaths + '</td>' +
         '<td>' + e.money + '</td></tr>';
     }).join('');
+    el.sbHalves.textContent = scoresAtHalf
+      ? '1st half: CT ' + scoresAtHalf.ct + '–' + scoresAtHalf.t + ' T' +
+        ' · 2nd half: CT ' + (scores.ct - scoresAtHalf.ct) + '–' + (scores.t - scoresAtHalf.t) + ' T'
+      : '1st half · you are CT — sides swap after round ' + HALF_ROUND;
   }
 
   /* ================================================================== *
@@ -784,16 +1095,18 @@
     if (!running) return;
     if (e.code === 'KeyR') playerReload();
     if (e.code === 'KeyB') toggleBuy();
-    if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
+    if (e.code === 'KeyG') cycleNade();
+    if (e.code.indexOf('Digit') === 0 || e.code === 'Minus') {
+      var d = e.code === 'Minus' ? -1 : parseInt(e.code.slice(-1), 10);
+      var n = e.code === 'Minus' ? 10 : (d === 0 ? 9 : d - 1); // buy row index
       if (buyOpen && phase === 'buy') {
-        var idx = parseInt(e.code.slice(-1), 10) - 1;
-        if (SHOP[idx]) buy(SHOP[idx].id);
-      } else {
-        switchWeapon(parseInt(e.code.slice(-1), 10));
+        if (buyKeys[n]) buy(buyKeys[n]);
+      } else if (d >= 1 && d <= 3) {
+        switchWeapon(d);
+      } else if (d === 4) {
+        cycleNade();
       }
     }
-    if (e.code === 'Digit4' && buyOpen && phase === 'buy') buy(SHOP[3].id);
-    if (e.code === 'Digit5' && buyOpen && phase === 'buy') buy(SHOP[4].id);
   });
   document.addEventListener('keyup', function (e) {
     keys[e.code] = false;
@@ -801,6 +1114,10 @@
   });
 
   canvas.addEventListener('mousedown', function (e) {
+    if (e.button === 2) { // RMB: AWP scope
+      if (running && !paused && !buyOpen) toggleScope();
+      return;
+    }
     if (e.button !== 0) return;
     // Re-acquire pointer lock lost outside the pause flow (e.g. after the buy
     // phase auto-locked failed, or Esc while dead). This click only aims.
@@ -816,7 +1133,7 @@
 
   document.addEventListener('mousemove', function (e) {
     if (document.pointerLockElement !== canvas || paused || !running) return;
-    player.dir += e.movementX * 0.0023 * sensitivity;
+    player.dir += e.movementX * 0.0023 * sensitivity * (player.scoped ? 0.45 : 1);
   });
 
   document.addEventListener('pointerlockchange', function () {
@@ -837,6 +1154,8 @@
     // canvas click retries, so this is safe to ignore.
     if (p && p.catch) p.catch(function () { });
   }
+
+  el.carry.addEventListener('change', function () { player.carryBomb = el.carry.checked; });
 
   $('btn-start').addEventListener('click', function () {
     SoundFX.unlock();
@@ -860,7 +1179,8 @@
    * ================================================================== */
   function updatePlayer(dt) {
     if (!player.alive) { player.speed = 0; return; }
-    var spd = keys.ShiftLeft || keys.ShiftRight ? 1.8 : 3.6;
+    var wmove = currentWeapon().move || 1;
+    var spd = (keys.ShiftLeft || keys.ShiftRight ? 1.8 : 3.6) * wmove;
     var mx = 0, my = 0;
     if (keys.KeyW) my += 1;
     if (keys.KeyS) my -= 1;
@@ -884,6 +1204,8 @@
     if (player.fireT > 0) player.fireT -= dt;
     if (player.switching > 0) player.switching -= dt;
     if (player.muzzle > 0) player.muzzle -= dt;
+    if (player.throwT > 0) player.throwT -= dt;
+    if (player.flashedT > 0) player.flashedT -= dt;
     player.bloom = Math.max(0, player.bloom - dt * 0.055);
     player.kick *= Math.pow(0.0015, dt); // recoil recovery
     if (player.reloading > 0) {
@@ -916,6 +1238,14 @@
 
     updatePlayer(dt);
 
+    // T side: walk over a dropped bomb to pick it up.
+    if (player.alive && player.team === 'T' && !player.hasBomb && bomb.dropped &&
+        Math.hypot(player.x - bomb.dropped.x, player.y - bomb.dropped.y) < 0.7) {
+      bomb.dropped = null;
+      player.hasBomb = true;
+      addFeedText('You recovered the bomb');
+    }
+
     for (var i = 0; i < bots.length; i++) {
       var b = bots[i];
       if (b.reloadT > 0) b.reloadT -= dt;
@@ -942,7 +1272,9 @@
       }
     }
 
+    updateGrenades(dt);
     updateBomb(dt);
+    updatePlanting(dt);
     checkWinConditions();
   }
 
@@ -956,47 +1288,69 @@
       if (!spectate || !spectate.alive) {
         spectate = null;
         for (var i = 0; i < bots.length; i++) {
-          if (bots[i].team === 'CT' && bots[i].alive) { spectate = bots[i]; break; }
+          if (bots[i].team === player.team && bots[i].alive) { spectate = bots[i]; break; }
         }
       }
       if (spectate) cam = spectate;
     }
 
+    var scopedNow = cam.isPlayer && player.scoped && player.alive;
     var renderCam = {
       x: cam.x, y: cam.y,
-      dir: cam.dir + (cam.isPlayer ? player.kick : 0) + (shake > 0 ? rand(-0.012, 0.012) * shake : 0)
+      dir: cam.dir + (cam.isPlayer ? player.kick : 0) + (shake > 0 ? rand(-0.012, 0.012) * shake : 0),
+      zoom: scopedNow ? 0.35 : 1
     };
 
-    // Build the sprite list for this frame.
+    // Build the sprite list for this frame. Smoke plumes hide whatever sits
+    // behind them, and are drawn as drifting puffs themselves.
     var sprites = [];
     bots.forEach(function (b) {
       if (!b.alive || b === cam) return;
+      if (smokeBetween(cam.x, cam.y, b.x, b.y)) return;
       sprites.push({
         x: b.x, y: b.y, img: b.sprite, scale: 0.9, aspect: 0.5,
         flash: b.flash,
-        marker: b.team === 'CT' ? '#5aa2ff' : null
+        marker: b.team === player.team ? (b.team === 'CT' ? '#5aa2ff' : '#e8b34b') : null
       });
     });
     if (bomb.planted || bomb.dropped) {
-      sprites.push({
-        x: bomb.planted ? bomb.x : bomb.dropped.x,
-        y: bomb.planted ? bomb.y : bomb.dropped.y,
-        img: spriteBomb, scale: 0.45, vOff: 0.55
-      });
+      var bx = bomb.planted ? bomb.x : bomb.dropped.x;
+      var by = bomb.planted ? bomb.y : bomb.dropped.y;
+      if (!smokeBetween(cam.x, cam.y, bx, by)) {
+        sprites.push({ x: bx, y: by, img: spriteBomb, scale: 0.45, vOff: 0.55 });
+      }
     }
+    grenades.forEach(function (g) {
+      sprites.push({ x: g.x, y: g.y, img: nadeSprites[g.type], scale: 0.22, vOff: -g.z / 0.22 });
+    });
+    smokes.forEach(function (s) {
+      var age = SMOKE_TIME - s.t;
+      var alpha = Math.min(1, age / 0.8, s.t / 2.5) * 0.9;
+      for (var p = 0; p < 4; p++) {
+        var pa = p * 1.7 + time * 0.25;
+        sprites.push({
+          x: s.x + Math.cos(pa) * 0.45, y: s.y + Math.sin(pa) * 0.45,
+          img: spriteSmoke, scale: 1.7, alpha: alpha,
+          vOff: -0.15 - 0.1 * Math.sin(time * 0.8 + p)
+        });
+      }
+    });
 
     ray.render(world, renderCam, sprites);
-    drawViewmodel(cam);
+    if (scopedNow) Viewmodel.drawScope(ray.ctx, canvas.width, canvas.height);
+    else drawViewmodel(cam);
     drawMinimapNow(cam);
   }
 
-  // First-person weapon: procedural gun/knife lower-right with walk bob,
-  // recoil kick and reload animation (see viewmodel.js).
+  // First-person weapon: procedural gun/knife/grenade lower-right with walk
+  // bob, recoil kick, reload and throw animations (see viewmodel.js).
   function drawViewmodel(cam) {
-    var kind = cam.isPlayer ? player.current : (cam.weapon ? cam.weapon.kind : 'rifle');
+    var isNade = cam.isPlayer && player.current === 'nade';
+    var kind = cam.isPlayer ? (isNade ? 'nade' : currentWeapon().kind) : (cam.weapon ? cam.weapon.kind : 'rifle');
     var wdef = cam.isPlayer ? currentWeapon() : null;
     Viewmodel.draw(ray.ctx, canvas.width, canvas.height, {
       kind: kind,
+      nadeColor: isNade ? NADES[player.nadeSel].color : undefined,
       bobPhase: time * 9,
       moveAmt: cam.isPlayer ? Math.min(1, player.speed / 3) : 0,
       swayX: 0, swayY: shake > 0 ? rand(-2, 2) * shake : 0,
@@ -1005,7 +1359,7 @@
       reloadFrac: cam.isPlayer && player.reloading > 0 && wdef.reload
         ? 1 - player.reloading / wdef.reload : -1,
       switchFrac: cam.isPlayer ? Math.max(0, player.switching / 0.4) : 0,
-      throwFrac: -1,
+      throwFrac: cam.isPlayer && player.throwT > 0 ? 1 - player.throwT / 0.55 : -1,
       t: time
     });
   }
@@ -1014,10 +1368,12 @@
     var dots = [];
     bots.forEach(function (b) {
       if (!b.alive) return;
-      if (b.team === 'CT' && b !== cam) dots.push({ x: b.x, y: b.y, color: '#5aa2ff' });
+      if (b.team === player.team && b !== cam) {
+        dots.push({ x: b.x, y: b.y, color: player.team === 'CT' ? '#5aa2ff' : '#e8b34b' });
+      }
     });
     blips.forEach(function (b) {
-      if (b.team === 'T') dots.push({ x: b.x, y: b.y, color: '#ff5347' });
+      if (b.team !== player.team) dots.push({ x: b.x, y: b.y, color: '#ff5347' });
     });
     var bombPos = null;
     if (bomb.planted || bomb.dropped) {
@@ -1048,6 +1404,8 @@
     el.weaponName.textContent = wdef.name;
     if (player.current === 'knife') {
       el.ammoMag.textContent = '—'; el.ammoRes.textContent = '—';
+    } else if (player.current === 'nade') {
+      el.ammoMag.textContent = player.nades[player.nadeSel]; el.ammoRes.textContent = '—';
     } else {
       var w = player.weapons[player.current];
       el.ammoMag.textContent = player.reloading > 0 ? '…' : w.mag;
@@ -1063,26 +1421,42 @@
       el.timer.classList.remove('danger');
     }
 
-    // Crosshair gap tracks spread; hidden while dead.
+    // Crosshair gap tracks spread; hidden while dead / scoped / flashed.
     var spread = wdef.spread ? (wdef.spread + player.bloom + Math.min(0.03, player.speed * 0.008)) : 0.01;
     document.documentElement.style.setProperty('--gap', Math.round(4 + spread * 900) + 'px');
-    el.crosshair.style.opacity = player.alive && !buyOpen && !sbOpen ? 1 : 0;
+    el.crosshair.style.opacity = player.alive && !buyOpen && !sbOpen && !player.scoped && player.flashedT <= 0 ? 1 : 0;
+
+    // Flash whiteout.
+    el.flash.style.opacity = player.flashedT > 0 ? Math.min(1, player.flashedT / 1.1) : 0;
 
     // Contextual hint.
     var hint = '';
     if (phase === 'buy') hint = 'B — buy menu · round starts in ' + Math.ceil(phaseTimer);
-    else if (bomb.planted && player.alive) {
-      var d = Math.hypot(player.x - bomb.x, player.y - bomb.y);
-      hint = d < 1.3 ? 'HOLD E TO DEFUSE' : 'bomb planted — find it and defuse!';
-    } else if (player.alive && phase === 'live') hint = '';
+    else if (player.alive && phase === 'live') {
+      if (player.team === 'T' && player.hasBomb && !bomb.planted) {
+        hint = nearSite() ? 'HOLD E TO PLANT' : 'you carry the bomb — reach site A or B';
+      } else if (bomb.planted) {
+        if (player.team === 'CT') {
+          var d = Math.hypot(player.x - bomb.x, player.y - bomb.y);
+          hint = d < 1.3 ? 'HOLD E TO DEFUSE' : 'bomb planted — find it and defuse!';
+        } else {
+          hint = 'bomb planted — defend it!';
+        }
+      }
+    }
     el.hint.textContent = hint;
 
-    // Defuse progress bar.
-    if (defusing.active) {
+    // Defuse / plant progress bar.
+    if (defusing.active || planting.active) {
       el.defuseWrap.classList.add('show');
-      var need = player.kit ? DEFUSE_KIT_TIME : DEFUSE_TIME;
-      el.defuseFill.style.width = Math.min(100, defusing.t / need * 100) + '%';
-      el.defuseLabel.textContent = player.kit ? 'DEFUSING (KIT)' : 'DEFUSING';
+      if (planting.active) {
+        el.defuseFill.style.width = Math.min(100, planting.t / PLANT_TIME * 100) + '%';
+        el.defuseLabel.textContent = 'PLANTING';
+      } else {
+        var need = player.kit ? DEFUSE_KIT_TIME : DEFUSE_TIME;
+        el.defuseFill.style.width = Math.min(100, defusing.t / need * 100) + '%';
+        el.defuseLabel.textContent = player.kit ? 'DEFUSING (KIT)' : 'DEFUSING';
+      }
     } else {
       el.defuseWrap.classList.remove('show');
     }
@@ -1120,6 +1494,7 @@
     Radar.setMap(world, sites);
     buildBuyMenu();
     spawnBots();
+    refreshSideBadge();
     requestAnimationFrame(loop);
   }
   boot();
